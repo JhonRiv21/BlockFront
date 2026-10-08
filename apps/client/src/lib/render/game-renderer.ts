@@ -1,29 +1,36 @@
 import { TICK_SECONDS, WORLD_SIZE } from '@blockfront/sim/config'
 import { FixedStep } from '@blockfront/sim/time/fixed-step'
-import {
-  BoxGeometry,
-  Color,
-  DirectionalLight,
-  Fog,
-  HemisphereLight,
-  InstancedMesh,
-  Matrix4,
-  Mesh,
-  MeshLambertMaterial,
-  PerspectiveCamera,
-  PlaneGeometry,
-  Scene,
-  WebGLRenderer,
-} from 'three'
+import { generateWorld } from '@blockfront/sim/world/generator'
+import { BLOCK } from '@blockfront/sim/world/palette'
+import { Color, Fog, PerspectiveCamera, Scene, Vector3, WebGLRenderer } from 'three'
+import { FlyCamera } from '../input/fly-camera.ts'
+import { MesherPool } from '../mesher/mesher-pool.ts'
+import { createVoxelMaterial } from './voxel-material.ts'
+import { WorldView } from './world-view.ts'
 
 export interface RenderStats {
   fps: number
   tick: number
+  meshAvgMs: number
+  meshMaxMs: number
+  quads: number
+}
+
+export interface RendererCallbacks {
+  onStats: (stats: RenderStats) => void
+  onPointerLock: (locked: boolean) => void
 }
 
 const SKY = new Color('#9cc7ef')
 const FPS_SAMPLE_MS = 500
-const ORBIT_RADIANS_PER_SECOND = 0.05
+const DEFAULT_SEED = 1
+const DIG_DISTANCE = 6
+const DIG_RADIUS = 2.5
+
+function workerCount(): number {
+  const cores = navigator.hardwareConcurrency || 4
+  return Math.max(2, Math.min(4, cores - 1))
+}
 
 export class GameRenderer {
   private readonly renderer: WebGLRenderer
@@ -31,6 +38,11 @@ export class GameRenderer {
   private readonly camera = new PerspectiveCamera(75, 1, 0.1, 400)
   private readonly clock = new FixedStep(TICK_SECONDS, 5)
   private readonly resizeObserver: ResizeObserver
+  private readonly pool = new MesherPool(workerCount())
+  private readonly material = createVoxelMaterial()
+  private readonly worldView: WorldView
+  private readonly flyCamera: FlyCamera
+  private readonly digTarget = new Vector3()
   private tick = 0
   private lastTime: number | null = null
   private framesInSample = 0
@@ -38,7 +50,7 @@ export class GameRenderer {
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
-    private readonly onStats: (stats: RenderStats) => void,
+    private readonly callbacks: RendererCallbacks,
   ) {
     this.renderer = new WebGLRenderer({
       canvas,
@@ -47,8 +59,24 @@ export class GameRenderer {
     })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     this.scene.background = SKY
-    this.scene.fog = new Fog(SKY, 60, 220)
-    this.buildPlaceholderWorld()
+    this.scene.fog = new Fog(SKY, 90, 260)
+
+    const world = generateWorld(DEFAULT_SEED)
+    this.worldView = new WorldView(this.scene, world, this.pool, this.material)
+    const buildStart = performance.now()
+    void this.worldView.rebuildAll().then(() => {
+      const { avgMs, maxMs, count } = this.pool.stats()
+      console.info(
+        `world meshed: ${count} chunks, ${this.worldView.totalQuads} quads, ` +
+          `${avgMs.toFixed(2)} ms avg / ${maxMs.toFixed(2)} ms max per chunk, ` +
+          `${(performance.now() - buildStart).toFixed(0)} ms wall with ${this.pool.size} workers`,
+      )
+    })
+
+    this.camera.position.set(WORLD_SIZE.x / 2, 40, 6)
+    this.camera.lookAt(WORLD_SIZE.x / 2, 22, WORLD_SIZE.z / 2)
+    this.flyCamera = new FlyCamera(this.camera, canvas, callbacks.onPointerLock)
+
     this.resizeObserver = new ResizeObserver(() => this.resize())
     this.resizeObserver.observe(canvas)
     this.resize()
@@ -58,30 +86,57 @@ export class GameRenderer {
     this.renderer.setAnimationLoop(this.frame)
   }
 
+  // Debug hooks for measuring from the console (see mount-game.ts).
+  get debug() {
+    return {
+      worldView: this.worldView,
+      pool: this.pool,
+      info: this.renderer.info,
+      renderOnce: () => this.frame(performance.now()),
+    }
+  }
+
   dispose(): void {
     this.renderer.setAnimationLoop(null)
     this.resizeObserver.disconnect()
-    this.scene.traverse((object) => {
-      if (object instanceof Mesh) {
-        object.geometry.dispose()
-        const materials = Array.isArray(object.material) ? object.material : [object.material]
-        for (const material of materials) material.dispose()
-      }
-    })
+    this.flyCamera.dispose()
+    this.worldView.dispose()
+    this.pool.dispose()
+    this.material.dispose()
     this.renderer.dispose()
   }
 
   private readonly frame = (time: number): void => {
     const elapsed = this.lastTime === null ? 0 : (time - this.lastTime) / 1000
     this.lastTime = time
-    const { steps, alpha } = this.clock.advance(elapsed)
+    const { steps } = this.clock.advance(elapsed)
     this.tick += steps
 
-    const angle = (this.tick + alpha) * TICK_SECONDS * ORBIT_RADIANS_PER_SECOND
-    this.camera.position.set(Math.cos(angle) * 110, 55, Math.sin(angle) * 110)
-    this.camera.lookAt(0, 0, 0)
+    this.flyCamera.update(Math.min(elapsed, 0.1))
+    if (this.flyCamera.takePressed('KeyX')) this.digAhead()
+
     this.renderer.render(this.scene, this.camera)
     this.sampleFps(time)
+  }
+
+  // Debug: carve a sphere in front of the camera; part 2 replaces this with real block picking.
+  private digAhead(): void {
+    this.camera.getWorldDirection(this.digTarget)
+    this.digTarget.multiplyScalar(DIG_DISTANCE).add(this.camera.position)
+    const cx = Math.floor(this.digTarget.x)
+    const cy = Math.floor(this.digTarget.y)
+    const cz = Math.floor(this.digTarget.z)
+    const r = Math.ceil(DIG_RADIUS)
+    for (let z = cz - r; z <= cz + r; z++)
+      for (let y = Math.max(1, cy - r); y <= cy + r; y++)
+        for (let x = cx - r; x <= cx + r; x++) {
+          const dx = x + 0.5 - this.digTarget.x
+          const dy = y + 0.5 - this.digTarget.y
+          const dz = z + 0.5 - this.digTarget.z
+          if (dx * dx + dy * dy + dz * dz > DIG_RADIUS * DIG_RADIUS) continue
+          this.worldView.setBlock(x, y, z, BLOCK.air)
+        }
+    void this.worldView.flushDirty()
   }
 
   private sampleFps(time: number): void {
@@ -92,7 +147,14 @@ export class GameRenderer {
     this.framesInSample++
     const span = time - this.sampleStart
     if (span < FPS_SAMPLE_MS) return
-    this.onStats({ fps: Math.round((this.framesInSample * 1000) / span), tick: this.tick })
+    const { avgMs, maxMs } = this.pool.stats()
+    this.callbacks.onStats({
+      fps: Math.round((this.framesInSample * 1000) / span),
+      tick: this.tick,
+      meshAvgMs: avgMs,
+      meshMaxMs: maxMs,
+      quads: this.worldView.totalQuads,
+    })
     this.framesInSample = 0
     this.sampleStart = time
   }
@@ -104,45 +166,4 @@ export class GameRenderer {
     this.camera.aspect = clientWidth / clientHeight
     this.camera.updateProjectionMatrix()
   }
-
-  // Stand-in terrain until the voxel world lands in F1.
-  private buildPlaceholderWorld(): void {
-    this.scene.add(new HemisphereLight('#dbeafe', '#3f5f2f', 1.4))
-    const sun = new DirectionalLight('#fff4e0', 1.6)
-    sun.position.set(60, 120, 40)
-    this.scene.add(sun)
-
-    const ground = new Mesh(
-      new PlaneGeometry(WORLD_SIZE.x, WORLD_SIZE.z),
-      new MeshLambertMaterial({ color: '#6aa84f' }),
-    )
-    ground.rotation.x = -Math.PI / 2
-    this.scene.add(ground)
-
-    const baseOffset = WORLD_SIZE.z / 2 - 16
-    this.scene.add(createTower('#3b82f6', -baseOffset))
-    this.scene.add(createTower('#ef4444', baseOffset))
-  }
-}
-
-function createTower(color: string, z: number): InstancedMesh {
-  const footprint = 4
-  const height = 6
-  const count = footprint * footprint * height
-  const tower = new InstancedMesh(
-    new BoxGeometry(1, 1, 1),
-    new MeshLambertMaterial({ color }),
-    count,
-  )
-  const matrix = new Matrix4()
-  let index = 0
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < footprint; x++) {
-      for (let dz = 0; dz < footprint; dz++) {
-        matrix.makeTranslation(x - footprint / 2 + 0.5, y + 0.5, z + dz - footprint / 2 + 0.5)
-        tower.setMatrixAt(index++, matrix)
-      }
-    }
-  }
-  return tower
 }

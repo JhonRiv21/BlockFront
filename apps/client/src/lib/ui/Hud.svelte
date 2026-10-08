@@ -14,8 +14,21 @@
   <div
     class="absolute top-4 right-4 rounded-md bg-hud-panel px-2 py-1 text-xs text-hud-muted tabular-nums"
   >
-    {frameStats.fps} fps · t{frameStats.tick}
+    {frameStats.fps} fps · t{frameStats.tick} · mesh {frameStats.meshAvgMs.toFixed(
+      1,
+    )}/{frameStats.meshMaxMs.toFixed(1)}
+    ms · {frameStats.quads} quads
   </div>
+
+  {#if !frameStats.pointerLocked}
+    <div
+      class="absolute bottom-24 left-1/2 -translate-x-1/2 rounded-md bg-hud-panel px-4 py-2 text-center text-sm text-hud-muted"
+    >
+      <p class="font-semibold text-hud">Clic para mirar · Click to look around</p>
+      <p>WASD mover · Shift correr · Espacio/C subir/bajar · X cavar</p>
+      <p>WASD move · Shift sprint · Space/C up/down · X dig</p>
+    </div>
+  {/if}
 
   <div class="absolute top-1/2 left-1/2 size-5 -translate-x-1/2 -translate-y-1/2">
     <span class="absolute top-1/2 left-0 h-0.5 w-full -translate-y-1/2 bg-hud/90"></span>

@@ -106,3 +106,64 @@ to compile the shader and capture the canvas (terrain, river, towers and AO rend
 
 **Debug keys** (click the canvas to lock the pointer, Esc releases it): `WASD` move, `Shift`
 sprint, `Space` / `C` up / down, `X` dig a sphere in front of the camera.
+
+## F1 part 2 — Movement, raycast and block editing (2026-10-08) — F1 closed
+
+**Done**
+
+- `packages/sim/src/physics`: `sweep.ts`, a swept AABB through the voxel grid in the style of
+  fenomas/voxel-aabb-sweep (the leading faces visit voxel boundaries in time order, the slice
+  about to be entered is tested before entering it, the box snaps onto the boundary on a hit and
+  slides by dropping that component, at most one collision per axis), and
+  `player-controller.ts` (0.6 × 1.8 box, crouch 1.2, eye 1.62 / 1.05, walk 4.3 / sprint 6.5 /
+  crouch 2 m/s, jump 8.4 m/s against 28 m/s² so the peak is ~1.26 blocks: one block only with a
+  jump, no auto-step; ground and air acceleration; `MoveInput` with yaw 0 facing −Z).
+- `packages/sim/src/raycast/dda.ts`: Amanatides–Woo traversal returning the block, the outward
+  normal of the face entered and the distance; a zero normal when the origin is inside a solid.
+- `apps/client`: `InputState` (pointer lock, keys by `code`, yaw/pitch, click edges, context menu
+  blocked). FPS by default: the sim steps at 30 Hz through `FixedStep`, the camera position is
+  interpolated with `alpha`, the look direction is applied without delay. A raycast every frame
+  with 5 blocks of reach drives `BlockHighlight` (block outline plus a translucent quad on the
+  aimed face). Left click digs (bedrock is protected), right click places a blue block on the aimed
+  face unless it would overlap the player. `F` toggles the free camera as a debug mode; coming back
+  drops the player where the camera was. Spawn on the blue base, facing the enemy.
+- Tests written from the spec: sweep (11: floor, walls on both sides, no tunnelling at 500
+  blocks per step, sliding, ceiling, gaps narrower than the box, corner clip, no auto-step,
+  resting contact), player controller (9: gravity, walk/sprint/strafe directions, jump height
+  between 1 and 2 blocks, no air jump, step only with a jump, head bump, crouch, wall slide) and
+  DDA (9: faces, diagonal entry, both chunk borders, origin on a boundary, unnormalised direction
+  with range, origin inside a solid). 59/59 in `sim`.
+
+**Measured** (hidden automation tab, dev server; seed 1)
+
+| Metric                                       | Value                                                        |
+| -------------------------------------------- | ------------------------------------------------------------ |
+| Frame loop CPU (sim step + raycast + render) | ~1.4 ms/frame (1 058 forced frames in 1.5 s)                 |
+| Triangles on screen from spawn               | 49 484 of 53 644 (frustum culled), 24 draw calls             |
+| Dig → remesh → geometry swapped, 1 chunk     | 5.6–12 ms wall (worker 3.9–11 ms); first after idle 23–29 ms |
+| Initial JS (gzip)                            | 21.6 kB app + 1.6 kB worker + 130.8 kB three = **154 kB**    |
+| CSS (gzip)                                   | 3.0 kB                                                       |
+
+**F1 done criteria (PLAN.md §5)**
+
+| Criterion                                   | Status                                                                                                                                                                                          |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Walk the whole map at a stable 60 fps       | **Not measured**: the automation tab gets no frames. CPU side is ~1.4 ms/frame with 24 draw calls, so the GPU decides. Measure in a visible tab.                                                |
+| Remesh of a chunk < 5 ms                    | **Met when warm**: 2.8 ms avg / 3.7 ms max on a full rebuild, 3.9 ms for a single chunk back to back. After the workers sit idle the first job spikes (7–29 ms in the hidden tab); see pending. |
+| Dig or place visible < 1 frame after remesh | **Met by construction**: the geometry is swapped in the worker's reply handler and the next render draws it.                                                                                    |
+
+**Notes / pending**
+
+- **Cold worker spikes.** After idling, the first remesh of a worker is 2–7× slower (JIT tier-down
+  or background-tab deprioritisation; the hidden tab makes this hard to tell apart). Verify in a
+  visible tab with `blockfront.pool.stats()`; if it holds, keep the workers warm or pre-warm them
+  at match start.
+- Crouch (1.2) and standing (1.8) fit under the same whole-block ceilings, so there is no headroom
+  check when standing up. Crouching puts the eye at 1.05, just over a one-block wall; it does not
+  allow 1-block tunnels (that would need a crouch height below 1).
+- Water is solid for physics as well as rendering (you walk on the river).
+- Digging and placing have no cadence, block HP or inventory yet; that is F2.
+
+**Keys** (click the canvas to lock the pointer, `Esc` releases it): `WASD` move, `Space` jump,
+`Ctrl` / `C` crouch, `Shift` sprint, left click dig, right click place, `F` free camera (then
+`Space` / `C` up / down, `Shift` fast, `F` back to the player).

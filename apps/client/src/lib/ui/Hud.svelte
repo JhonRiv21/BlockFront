@@ -17,16 +17,23 @@
     {frameStats.fps} fps · t{frameStats.tick} · mesh {frameStats.meshAvgMs.toFixed(
       1,
     )}/{frameStats.meshMaxMs.toFixed(1)}
-    ms · {frameStats.quads} quads
+    ms · {frameStats.quads} quads · {frameStats.mode === 'fps' ? 'FPS' : 'FLY'}
   </div>
 
   {#if !frameStats.pointerLocked}
     <div
       class="absolute bottom-24 left-1/2 -translate-x-1/2 rounded-md bg-hud-panel px-4 py-2 text-center text-sm text-hud-muted"
     >
-      <p class="font-semibold text-hud">Clic para mirar · Click to look around</p>
-      <p>WASD mover · Shift correr · Espacio/C subir/bajar · X cavar</p>
-      <p>WASD move · Shift sprint · Space/C up/down · X dig</p>
+      <p class="font-semibold text-hud">Clic para jugar · Click to play</p>
+      {#if frameStats.mode === 'fps'}
+        <p>WASD mover · Espacio saltar · Ctrl/C agacharse · Shift correr</p>
+        <p>Clic izq. picar · Clic der. colocar · F cámara libre · Esc soltar el ratón</p>
+        <p>WASD move · Space jump · Ctrl/C crouch · Shift sprint</p>
+        <p>Left click dig · Right click place · F free camera · Esc release the mouse</p>
+      {:else}
+        <p>WASD mover · Espacio/C subir/bajar · Shift rápido · F volver al jugador</p>
+        <p>WASD move · Space/C up/down · Shift fast · F back to the player</p>
+      {/if}
     </div>
   {/if}
 

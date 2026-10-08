@@ -14,6 +14,9 @@ export const mountGame: Attachment<HTMLCanvasElement> = (canvas) => {
     onPointerLock: (locked) => {
       frameStats.pointerLocked = locked
     },
+    onMode: (mode) => {
+      frameStats.mode = mode
+    },
   })
   renderer.start()
   if (import.meta.env.DEV) {

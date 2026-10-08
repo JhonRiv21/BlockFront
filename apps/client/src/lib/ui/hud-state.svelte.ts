@@ -8,6 +8,13 @@ export interface KillFeedEntry {
   until: number
 }
 
+export interface DamageIndicator {
+  id: number
+  // World yaw toward the attacker, radians.
+  angle: number
+  until: number
+}
+
 export type CameraMode = 'fps' | 'fly'
 
 class HudState {
@@ -21,6 +28,7 @@ class HudState {
   pointerLocked = $state(false)
   mode = $state<CameraMode>('fps')
   showHitboxes = $state(false)
+  assetsReady = $state(false)
 
   hp = $state(100)
   alive = $state(true)
@@ -38,6 +46,9 @@ class HudState {
   hitmarker = $state(false)
   hitmarkerHead = $state(false)
   killFeed = $state<KillFeedEntry[]>([])
+  damageIndicators = $state<DamageIndicator[]>([])
+  // Current view yaw, so damage indicators can be drawn relative to the view.
+  yaw = $state(0)
   scoreBlue = $state(0)
   scoreRed = $state(0)
 }

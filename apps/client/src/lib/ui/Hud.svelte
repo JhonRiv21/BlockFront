@@ -48,6 +48,17 @@
     {/each}
   </div>
 
+  {#each hudState.damageIndicators as indicator (indicator.id)}
+    <div
+      class="absolute top-1/2 left-1/2 size-0"
+      style="transform: rotate({(-(indicator.angle - hudState.yaw) * 180) / Math.PI}deg)"
+    >
+      <span
+        class="absolute left-1/2 h-3 w-20 -translate-x-1/2 -translate-y-24 rounded-full bg-team-red/80"
+      ></span>
+    </div>
+  {/each}
+
   {#if hudState.alive}
     <div class="absolute top-1/2 left-1/2 size-0">
       <span class="absolute h-0.5 w-2 -translate-y-1/2 bg-hud/90" style="left: {gap}px"></span>
@@ -72,6 +83,14 @@
       <p class="text-hud-muted">
         Reapareces en {Math.ceil(hudState.respawnIn)} s · Respawn in {Math.ceil(hudState.respawnIn)} s
       </p>
+    </div>
+  {/if}
+
+  {#if !hudState.assetsReady}
+    <div
+      class="absolute top-16 left-1/2 -translate-x-1/2 rounded-md bg-hud-panel px-3 py-1 text-xs text-hud-muted"
+    >
+      Cargando assets · Loading assets
     </div>
   {/if}
 

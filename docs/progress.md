@@ -244,3 +244,87 @@ Combat verified end to end from the console in the hidden tab: two rifle shots s
 `Ctrl` / `C` crouch, `Shift` sprint, `R` reload, `1`–`4` or wheel to switch slot, left click
 fire / dig / place / cook grenade (release to throw), right click aim (sniper) / shovel column,
 `F` free camera, `H` hitboxes.
+
+## F2 part B — Assets and game feel (2026-10-08) — F2 closed
+
+**Done**
+
+- **Assets, all CC0 from Kenney** (license re-checked on each pack page and in each pack's
+  `License.txt`; listed in `assets/CREDITS.md`): Blocky Characters 2.0 (`character-a`, with its
+  idle / walk / sprint / die clips), Blaster Kit 2.1 (`blaster-g` rifle, `blaster-n` SMG,
+  `blaster-q` shotgun, `blaster-f` sniper, `grenade-a`), Impact Sounds 1.0 and Sci-Fi Sounds 1.0.
+  Quaternius Ultimate Guns is CC0 too but only ships through a Google Drive folder, so the Blaster
+  Kit was used for a reproducible download and a matching blocky look.
+- **Pipeline**: `gltf-transform optimize --compress quantize --texture-compress webp
+--texture-size 512|256 --simplify false` (the character keeps `--join false --flatten false`
+  so the per-part animations survive); audio re-encoded with ffmpeg to mono AAC 22 kHz at 40 kb/s
+  (`.m4a`, which Safari also decodes; Homebrew's ffmpeg has no libvorbis). Served from
+  `apps/client/public/{models,audio}` and loaded once by `AssetStore` (GLTFLoader + AudioLoader).
+- **Player models**: other players are the Kenney character tinted per team (material colour
+  multiplied), scaled 1.8 / 2.7, squashed when crouching, playing idle / walk / sprint from the
+  snapshot speed and `die` (clamped) on death, with the primary weapon cloned into the
+  `arm-right` node. A team-coloured box stands in until the assets arrive.
+- **Viewmodel**: the held tool renders in a second scene on top of the world (`clearDepth`
+  between passes): Blaster Kit models for the four weapons and the grenade, a procedural shovel
+  and a team-coloured cube for blocks. Bobbing with movement, kick back and up per shot
+  (per-weapon amount), centred while aiming.
+- **Game feel**: camera recoil (pitch kick per weapon, exponential recovery, never written to the
+  input), hitmarker with sound (glass tick, heavier on headshots), block particles (instanced
+  cubes coloured from the palette: 14 on break, 4 on damage), light screen shake on explosions
+  within 16 blocks scaled by distance, damage direction indicator (red arc on the HUD rotated
+  toward the attacker, 1.2 s), positional audio for other players' shots, shovel swings, block
+  hits / breaks / placements, grenade throws, explosions, deaths and footsteps (`PositionalAudio`,
+  inverse rolloff), 2D audio for the local player (shots, hurt, death, reload on the reloading
+  edge, own footsteps every 2.1 blocks on the ground). The AudioContext resumes on pointer lock.
+- Dummies moved to the flat plateau past the towers so both stand on open ground.
+
+**Measured**
+
+| Metric                                    | Value                                                                         | Budget   |
+| ----------------------------------------- | ----------------------------------------------------------------------------- | -------- |
+| Models (6 glTF, quantized + WebP)         | 163 KB (character 53 KB, weapons 18–30 KB, grenade 10 KB)                     | —        |
+| Audio (22 clips, mono AAC 22 kHz)         | 89 KB                                                                         | —        |
+| Initial JS (gzip)                         | 30.3 kB app + 8.5 kB sim worker + 1.6 kB mesher + 159.5 kB three = **200 kB** | < 600 kB |
+| First match total (JS + CSS + assets)     | ≈ **0.5 MB**                                                                  | < 5 MB   |
+| Frame CPU with viewmodel pass + particles | 0.3 ms (300 forced frames, hidden tab)                                        | —        |
+| `Game.step` in the worker (hidden tab)    | 0.02 ms avg / 0.10 ms max over the last 3 s                                   | —        |
+
+Three's chunk grew from 131 to 160 kB gzip because GLTFLoader, the animation system and audio
+are now bundled.
+
+**F2 done criteria (PLAN.md §5)**
+
+| Criterion                                                      | Status                                                                                                                                                                                                    |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Two static dummies take the right damage per zone and distance | **Met**: `damage.test.ts` covers every weapon, zone and falloff point; the dummies are hit through the same hitscan (verified from the console: rifle 100 → 50 → dead → respawn).                         |
+| Game feel of §3 complete                                       | **Met**: shot and impact sounds, camera and weapon recoil, hitmarker with sound, block particles, grenade screen shake, damage direction indicator, kill feed. The optional damage numbers were left out. |
+
+**Notes / pending**
+
+- Not measured in a visible tab: fps, audio mix levels and recoil feel. Tune the constants in
+  `camera-effects.ts`, `viewmodel.ts` and the volumes in `game-renderer.ts` by ear.
+- Grenade bounces have no sound (the sim emits no bounce event); the `grenade-bounce` clip is
+  shipped for when it does.
+- The held weapon on other players is placed by hand on the `arm-right` pivot; it sits at hip
+  height. The dummies use the rifle until a weapon choice exists per player.
+- Block particles ignore collisions (they fall through the ground and fade in 0.9 s).
+
+**Verified in the hidden tab**: all 6 models and 22 sounds load, the AudioContext is running,
+a shovel dig broke a block (quads 26 822 → 26 827, blocks stayed capped at 50) and no console
+errors appeared while shots, particles and sounds fired.
+
+**Adjustments after the first playtest (2026-10-08)**
+
+- Block particles rotated around their world position as if it were a unit axis, so every shot
+  or shovel hit filled the view with giant palette-coloured cubes. Each particle now spins around
+  its own unit axis.
+- The Blaster Kit rifle looked too sci-fi: the rifle is now a procedural low-poly model
+  (`rifle-model.ts`, wood stock and grip, metal receiver, barrel and magazine) used both as the
+  viewmodel and in other players' hands; `rifle.glb` was dropped. SMG, shotgun and sniper keep
+  the blasters for now.
+- Muzzle flash: additive radial sprite at the muzzle for 50 ms, on the viewmodel and at other
+  players' barrels (`muzzle-flash.ts`).
+- The rifle shot is a synthesized gunshot (noise crack + 70 Hz thump over Kenney's
+  `impactPlate_heavy`) instead of a laser.
+- An empty magazine reloads by itself when the reserve allows; the spec test was updated.
+- Health bar above other players (camera-facing sprites, only shown below 100 HP, green to red).

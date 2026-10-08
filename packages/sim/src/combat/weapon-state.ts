@@ -70,7 +70,8 @@ export function stepWeapon(state: WeaponState, dt: number, input: WeaponInput): 
     fired = 'fired'
   }
 
-  const wantsReload = input.reload
+  // An empty magazine reloads by itself as soon as the reserve allows it.
+  const wantsReload = input.reload || state.mag === 0
   if (wantsReload && !state.reloading && state.mag < spec.magazine && state.reserve > 0) {
     state.reloading = true
     state.reloadLeft = spec.reloadSeconds

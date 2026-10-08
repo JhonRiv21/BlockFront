@@ -25,7 +25,13 @@ export const mountGame: Attachment<HTMLCanvasElement> = (canvas) => {
     onHitboxes: (shown) => {
       hudState.showHitboxes = shown
     },
-    onHud: ({ player, hitmarker, killFeed }) => {
+    onView: (yaw) => {
+      hudState.yaw = yaw
+    },
+    onAssetsReady: () => {
+      hudState.assetsReady = true
+    },
+    onHud: ({ player, hitmarker, killFeed, damageIndicators }) => {
       hudState.hp = Math.ceil(player.hp)
       hudState.alive = player.alive
       hudState.respawnIn = player.respawnIn
@@ -39,6 +45,7 @@ export const mountGame: Attachment<HTMLCanvasElement> = (canvas) => {
       hudState.cooking = player.cooking
       hudState.spread = player.spread
       hudState.killFeed = killFeed
+      hudState.damageIndicators = damageIndicators
       if (hitmarker) {
         hudState.hitmarker = true
         hudState.hitmarkerHead = hitmarker.head
@@ -51,7 +58,7 @@ export const mountGame: Attachment<HTMLCanvasElement> = (canvas) => {
   })
   renderer.start()
   if (import.meta.env.DEV) {
-    // window.blockfront.pool.stats(), .transport.stepStats(), .snapshot(), .renderOnce()
+    // window.blockfront.pool.stats(), .transport.stepStats(), .snapshot(), .assets, .renderOnce()
     Object.assign(window, { blockfront: renderer.debug })
   }
   return () => {

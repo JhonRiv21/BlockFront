@@ -76,14 +76,18 @@ describe('fire interval', () => {
 })
 
 describe('ammo', () => {
-  it('each shot takes one round; an empty magazine does not fire', () => {
+  it('each shot takes one round and an empty magazine reloads by itself', () => {
     const state = createWeaponState('rifle')
     let fired = 0
-    for (let i = 0; i < ticks(10); i++)
-      if (stepWeapon(state, TICK_SECONDS, tap) === 'fired') fired++
+    for (let i = 0; i < ticks(4); i++) if (stepWeapon(state, TICK_SECONDS, tap) === 'fired') fired++
     expect(fired).toBe(8)
     expect(state.mag).toBe(0)
     expect(state.reserve).toBe(48)
+    expect(state.reloading).toBe(true)
+    for (let t = 0; t < ticks(WEAPONS.rifle.reloadSeconds) + 1; t++)
+      stepWeapon(state, TICK_SECONDS, idle)
+    expect(state.mag).toBe(8)
+    expect(state.reserve).toBe(40)
   })
 
   it('reload moves rounds from the reserve into the magazine', () => {
@@ -105,12 +109,12 @@ describe('ammo', () => {
   it('the total number of shots is magazine plus reserve', () => {
     const state = createWeaponState('sniper')
     let fired = 0
-    for (let i = 0; i < ticks(120); i++) {
-      const input = state.mag === 0 ? { ...idle, reload: true } : tap
-      if (stepWeapon(state, TICK_SECONDS, input) === 'fired') fired++
-    }
+    for (let i = 0; i < ticks(120); i++)
+      if (stepWeapon(state, TICK_SECONDS, tap) === 'fired') fired++
     expect(fired).toBe(30)
     expect(state.reserve).toBe(0)
+    expect(state.mag).toBe(0)
+    expect(state.reloading).toBe(false)
   })
 
   it('does not reload a full magazine or without reserve', () => {

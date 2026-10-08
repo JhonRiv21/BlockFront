@@ -8,6 +8,8 @@ export class InputState {
   private readonly held = new Set<string>()
   private readonly pressed = new Set<string>()
   private readonly clicked = new Set<number>()
+  private readonly mouseHeld = new Set<number>()
+  private wheelSteps = 0
 
   constructor(
     private readonly element: HTMLElement,
@@ -18,6 +20,8 @@ export class InputState {
     document.addEventListener('pointerlockchange', this.onPointerLockChange)
     document.addEventListener('mousemove', this.onMouseMove)
     document.addEventListener('mousedown', this.onMouseDown)
+    document.addEventListener('mouseup', this.onMouseUp)
+    document.addEventListener('wheel', this.onWheel, { passive: false })
     window.addEventListener('keydown', this.onKeyDown)
     window.addEventListener('keyup', this.onKeyUp)
     window.addEventListener('blur', this.onBlur)
@@ -41,6 +45,17 @@ export class InputState {
     return this.clicked.delete(button)
   }
 
+  isMouseHeld(button: number): boolean {
+    return this.mouseHeld.has(button)
+  }
+
+  // Net wheel notches since the last call: positive scrolls down.
+  takeWheel(): number {
+    const steps = this.wheelSteps
+    this.wheelSteps = 0
+    return steps
+  }
+
   axis(negative: string, positive: string): number {
     return (this.held.has(positive) ? 1 : 0) - (this.held.has(negative) ? 1 : 0)
   }
@@ -51,6 +66,8 @@ export class InputState {
     document.removeEventListener('pointerlockchange', this.onPointerLockChange)
     document.removeEventListener('mousemove', this.onMouseMove)
     document.removeEventListener('mousedown', this.onMouseDown)
+    document.removeEventListener('mouseup', this.onMouseUp)
+    document.removeEventListener('wheel', this.onWheel)
     window.removeEventListener('keydown', this.onKeyDown)
     window.removeEventListener('keyup', this.onKeyUp)
     window.removeEventListener('blur', this.onBlur)
@@ -70,6 +87,7 @@ export class InputState {
       this.held.clear()
       this.pressed.clear()
       this.clicked.clear()
+      this.mouseHeld.clear()
     }
     this.onLockChange(this.locked)
   }
@@ -84,6 +102,17 @@ export class InputState {
   private readonly onMouseDown = (event: MouseEvent): void => {
     if (!this.locked) return
     this.clicked.add(event.button)
+    this.mouseHeld.add(event.button)
+  }
+
+  private readonly onMouseUp = (event: MouseEvent): void => {
+    this.mouseHeld.delete(event.button)
+  }
+
+  private readonly onWheel = (event: WheelEvent): void => {
+    if (!this.locked) return
+    event.preventDefault()
+    if (event.deltaY !== 0) this.wheelSteps += Math.sign(event.deltaY)
   }
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
@@ -99,5 +128,6 @@ export class InputState {
 
   private readonly onBlur = (): void => {
     this.held.clear()
+    this.mouseHeld.clear()
   }
 }

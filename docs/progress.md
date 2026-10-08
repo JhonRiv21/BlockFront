@@ -167,3 +167,80 @@ sprint, `Space` / `C` up / down, `X` dig a sphere in front of the camera.
 **Keys** (click the canvas to lock the pointer, `Esc` releases it): `WASD` move, `Space` jump,
 `Ctrl` / `C` crouch, `Shift` sprint, left click dig, right click place, `F` free camera (then
 `Space` / `C` up / down, `Shift` fast, `F` back to the player).
+
+## F2 part A — Simulation and combat (2026-10-08) — done
+
+**Done**
+
+- `packages/sim/src/game.ts`: `Game.step(inputs) → events` at 30 Hz with a serialisable state
+  (`serialize()` / `Game.restore()`: config, tick, RNG state, players, grenades, block changes
+  since generation and block health). Players move with the F1 controller, switch slots (1
+  weapon, 2 shovel, 3 blocks, 4 grenade), die at 0 HP and respawn after 5 s with full resources.
+  Dummies are players that never receive input. Friendly fire is off; own grenades do hurt.
+- `packages/sim/src/input.ts`: `InputFrame` (seq, forward/strafe, yaw/pitch, button bitmask
+  jump/crouch/sprint/fire/alt/reload, slot). One per tick per player.
+- `packages/sim/src/combat/weapons.ts`: the whole balance table in one file, numbers exactly as
+  PLAN.md §3 (damage per zone, interval, magazine/reserve, pellets, block damage, grenade and
+  shovel values). Decisions the table left open: shotgun falloff 100% to 8 blocks then linear to
+  25% at 20; SMG linear from 20 to 45 blocks and flat beyond; spreads in degrees per weapon with
+  heat that grows per shot and decays per second; crouching multiplies spread by 0.6; sniper
+  spread 0.05° while aiming (right click, FOV 30 on the client) and 4° from the hip.
+- `damage.ts` (zone × falloff), `weapon-state.ts` (cooldown with carry so the SMG really fires
+  10/s, semi-auto on press, magazine and reserve, reload; the shotgun loads one shell per 0.5 s
+  and firing cancels it, other weapons cannot fire mid-reload), `hitboxes.ts` (head, torso and
+  limbs as AABBs scaled when crouching; slab ray test), `blocks.ts` (sparse `BlockHealth`, 100 HP,
+  bedrock immune; `explodeBlocks` breaks every block whose center is within radius 2 = 33 blocks
+  in open rock), `grenade.ts` (gravity, bounce 0.45, ground friction, swept with the F1 AABB).
+- Hitscan: nearest of the first solid voxel (DDA) and enemy hitboxes; pellets scatter inside the
+  spread cone with the match RNG. Shovel: 60 melee within 2.5 blocks, else 55 to the aimed block
+  within 5; right click hits the aimed block plus the ones above and below. Blocks: placing while
+  holding the button every 0.2 s on the aimed face (so a drag lays a line), never inside a player,
+  max 50; a block broken with the shovel gives +1 (capped at 50). Grenade: press starts the 3 s
+  fuse (cooking), release throws at 16 m/s plus the player velocity, 100 damage at the center to 0
+  at 4 blocks with a line-of-sight check after the blocks are removed; cooking past the fuse
+  explodes in hand.
+- Client: `Transport` interface and `LocalTransport`, which runs `Game` in `sim.worker.ts` at
+  30 Hz. The main thread only sends one `InputFrame` per tick (its own `FixedStep`) and receives
+  snapshot + events. Block events are applied to the client `World` and remeshed through the F1
+  API. The camera position interpolates between the last two snapshots; the look is instant.
+  Other players are team-coloured boxes with a head (`H` shows the sim hitboxes as wireframes),
+  grenades are spheres, the block highlight only shows for shovel and blocks.
+- HUD: HP, magazine / reserve with reload notice, blocks and grenades, slot bar (keys 1–4 and
+  wheel), crosshair gap driven by the current spread, hitmarker (red on head), kill feed (6 s),
+  death overlay with respawn countdown, cooking timer, sim and mesh timings.
+- Crouch height 1.2 / eye 1.05 (already applied at the end of F1).
+- Tests written from the spec: damage per zone and distance for every weapon (5), fire interval,
+  magazine, reserve, reload and shell-by-shell shotgun reload (12), block health, +1 on dig and
+  grenade radius (7 + 3 in `game.test.ts`), plus Game spawn, grounding, placement rules and
+  serialisation round trip. 92/92 in `sim`.
+
+**Measured**
+
+| Metric                                      | Value                                                                                              |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `Game.step`, 2 dummies, Node 22 (900 ticks) | idle 0.008 ms avg · walking 0.008 ms · SMG auto 0.006 ms avg, 0.65 ms max                          |
+| `Game.step` in the sim worker (hidden tab)  | 0.17 ms avg right after start; 1.6 ms avg / 80 ms max later, inflated by background-tab throttling |
+| `snapshot()`                                | 0.14 ms, 938 bytes as JSON (3 players)                                                             |
+| Initial JS (gzip)                           | 25.9 kB app + 8.5 kB sim worker + 1.6 kB mesher worker + 130.0 kB three = **166 kB**               |
+| CSS (gzip)                                  | 3.2 kB                                                                                             |
+
+Combat verified end to end from the console in the hidden tab: two rifle shots sent as
+`InputFrame`s through `blockfront.transport` took a dummy from 100 to 50 to dead, it respawned at
+100 after 5 s, and the magazine went 8 → 6.
+
+**Notes / pending**
+
+- Input → visible latency is roughly one tick (33 ms) plus one interpolation window (33 ms)
+  because the client renders behind the worker. Prediction is an F4 item; if it bothers on a
+  visible tab, the F1 local controller can be revived as prediction earlier.
+- Sim timings in the hidden automation tab spike (80 ms) because Chrome deprioritises background
+  workers; the Node numbers are the reliable ones. Measure in a visible tab with
+  `blockfront.transport.stepStats()`.
+- No audio, viewmodel, player models, recoil, particles, damage direction or screen shake yet
+  (part B). Dummies are boxes. Score is still 0 : 0 (CTF is F3).
+- Blocks broken by bullets or grenades give nothing back; only the shovel does.
+
+**Keys** (click the canvas to lock the pointer, `Esc` releases it): `WASD` move, `Space` jump,
+`Ctrl` / `C` crouch, `Shift` sprint, `R` reload, `1`–`4` or wheel to switch slot, left click
+fire / dig / place / cook grenade (release to throw), right click aim (sniper) / shovel column,
+`F` free camera, `H` hitboxes.

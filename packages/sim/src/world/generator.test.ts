@@ -9,10 +9,7 @@ import { generateWorld } from './generator.ts'
 function sampleBlocks(seed: number): Uint8Array {
   const world = generateWorld(seed)
   const out = new Uint8Array(WORLD_SIZE.x * WORLD_SIZE.y * WORLD_SIZE.z)
-  let i = 0
-  for (let z = 0; z < WORLD_SIZE.z; z++)
-    for (let y = 0; y < WORLD_SIZE.y; y++)
-      for (let x = 0; x < WORLD_SIZE.x; x++) out[i++] = world.getBlock(x, y, z)
+  world.chunks.forEach((chunk, i) => out.set(chunk.data, i * chunk.data.length))
   return out
 }
 

@@ -1,27 +1,61 @@
 import type { Attachment } from 'svelte/attachments'
-import { frameStats } from './frame-stats.svelte.ts'
+import { hudState } from '../ui/hud-state.svelte.ts'
 import { GameRenderer } from './game-renderer.ts'
 
+const HITMARKER_MS = 140
+
 export const mountGame: Attachment<HTMLCanvasElement> = (canvas) => {
+  let hitmarkerTimer: ReturnType<typeof setTimeout> | undefined
   const renderer = new GameRenderer(canvas, {
-    onStats: ({ fps, tick, meshAvgMs, meshMaxMs, quads }) => {
-      frameStats.fps = fps
-      frameStats.tick = tick
-      frameStats.meshAvgMs = meshAvgMs
-      frameStats.meshMaxMs = meshMaxMs
-      frameStats.quads = quads
+    onStats: (stats) => {
+      hudState.fps = stats.fps
+      hudState.tick = stats.tick
+      hudState.meshAvgMs = stats.meshAvgMs
+      hudState.meshMaxMs = stats.meshMaxMs
+      hudState.simAvgMs = stats.simAvgMs
+      hudState.simMaxMs = stats.simMaxMs
+      hudState.quads = stats.quads
     },
     onPointerLock: (locked) => {
-      frameStats.pointerLocked = locked
+      hudState.pointerLocked = locked
     },
     onMode: (mode) => {
-      frameStats.mode = mode
+      hudState.mode = mode
+    },
+    onHitboxes: (shown) => {
+      hudState.showHitboxes = shown
+    },
+    onHud: ({ player, hitmarker, killFeed }) => {
+      hudState.hp = Math.ceil(player.hp)
+      hudState.alive = player.alive
+      hudState.respawnIn = player.respawnIn
+      hudState.slot = player.slot
+      hudState.weapon = player.weapon
+      hudState.mag = player.mag
+      hudState.reserve = player.reserve
+      hudState.reloading = player.reloading
+      hudState.blocks = player.blocks
+      hudState.grenades = player.grenades
+      hudState.cooking = player.cooking
+      hudState.spread = player.spread
+      hudState.killFeed = killFeed
+      if (hitmarker) {
+        hudState.hitmarker = true
+        hudState.hitmarkerHead = hitmarker.head
+        clearTimeout(hitmarkerTimer)
+        hitmarkerTimer = setTimeout(() => {
+          hudState.hitmarker = false
+        }, HITMARKER_MS)
+      }
     },
   })
   renderer.start()
   if (import.meta.env.DEV) {
-    // window.blockfront.pool.stats(), .worldView.totalQuads, .renderOnce()
+    // window.blockfront.pool.stats(), .transport.stepStats(), .snapshot(), .renderOnce()
     Object.assign(window, { blockfront: renderer.debug })
   }
-  return () => renderer.dispose()
+  return () => {
+    clearTimeout(hitmarkerTimer)
+    renderer.dispose()
+  }
 }

@@ -1,0 +1,24 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-hud: oklch(0.97 0.01 250);
+  --color-hud-muted: oklch(0.8 0.02 250);
+  --color-hud-panel: oklch(0.18 0.02 260 / 0.55);
+  --color-team-blue: oklch(0.64 0.17 255);
+  --color-team-red: oklch(0.63 0.2 25);
+  --color-health: oklch(0.72 0.17 150);
+  --font-hud: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Roboto Mono', monospace;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: #0b1020;
+  user-select: none;
+}

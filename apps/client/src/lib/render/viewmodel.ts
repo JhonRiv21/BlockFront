@@ -15,13 +15,14 @@ import {
 } from 'three'
 import type { AssetStore } from '../assets/asset-store.ts'
 import { MuzzleFlashes } from './muzzle-flash.ts'
-import { buildRifle, RIFLE_MUZZLE_Z } from './rifle-model.ts'
+import { buildWeapon, MUZZLE_Y, MUZZLE_Z } from './weapon-models.ts'
 
 const REST = new Vector3(0.3, -0.27, -0.55)
 const AIM = new Vector3(0, -0.14, -0.45)
 const KICK_BACK: Record<WeaponId, number> = { rifle: 0.09, smg: 0.05, shotgun: 0.16, sniper: 0.2 }
 const KICK_RECOVERY = 12
 const BOB_AMOUNT = 0.012
+const WEAPON_SCALE = 0.85
 
 // First-person weapon rendered in its own scene on top of the world: the held tool follows
 // the camera, bobs with movement, kicks on every shot and centers while aiming.
@@ -52,10 +53,15 @@ export class Viewmodel {
       PALETTE[team === 'blue' ? BLOCK.blue : BLOCK.red] ?? 0xffffff,
     )
     this.flashes = new MuzzleFlashes(this.holder)
-    const rifle = buildRifle()
-    rifle.scale.setScalar(0.85)
-    this.tools.set('rifle', rifle)
-    this.muzzles.set('rifle', new Vector3(0, 0.045 * 0.85, RIFLE_MUZZLE_Z * 0.85))
+    for (const weapon of ['rifle', 'smg', 'shotgun', 'sniper'] as const) {
+      const model = buildWeapon(weapon)
+      model.scale.setScalar(WEAPON_SCALE)
+      this.tools.set(weapon, model)
+      this.muzzles.set(
+        weapon,
+        new Vector3(0, MUZZLE_Y[weapon] * WEAPON_SCALE, MUZZLE_Z[weapon] * WEAPON_SCALE),
+      )
+    }
     this.tools.set('shovel', buildShovel())
     this.tools.set('blocks', buildBlock(this.blockMaterial))
     void assets.ready.then(() => this.buildModels())
@@ -104,21 +110,13 @@ export class Viewmodel {
   }
 
   private buildModels(): void {
-    for (const name of ['smg', 'shotgun', 'sniper', 'grenade'] as const) {
-      const model = this.assets.model(name)
-      if (!model) continue
+    const grenade = this.assets.model('grenade')
+    if (grenade) {
       const group = new Group()
-      const clone = model.scene.clone(true)
-      // Blasters point down +Z; the camera looks down -Z.
-      clone.rotation.y = Math.PI
-      const scale = name === 'grenade' ? 0.8 : 0.5
-      clone.scale.setScalar(scale)
+      const clone = grenade.scene.clone(true)
+      clone.scale.setScalar(0.8)
       group.add(clone)
-      this.tools.set(name, group)
-      if (name !== 'grenade') {
-        const length = name === 'sniper' ? 0.655 : name === 'shotgun' ? 0.355 : 0.32
-        this.muzzles.set(name, new Vector3(0, 0, -length * scale))
-      }
+      this.tools.set('grenade', group)
     }
     if (this.current) {
       const name = this.current

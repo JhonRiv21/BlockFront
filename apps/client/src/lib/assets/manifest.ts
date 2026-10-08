@@ -2,9 +2,6 @@
 // mono AAC at 22 kHz; sources and licenses are listed in assets/CREDITS.md.
 export const MODELS = {
   character: '/models/character.glb',
-  smg: '/models/smg.glb',
-  shotgun: '/models/shotgun.glb',
-  sniper: '/models/sniper.glb',
   grenade: '/models/grenade.glb',
 } as const
 

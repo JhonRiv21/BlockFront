@@ -328,3 +328,8 @@ errors appeared while shots, particles and sounds fired.
   `impactPlate_heavy`) instead of a laser.
 - An empty magazine reloads by itself when the reserve allows; the spec test was updated.
 - Health bar above other players (camera-facing sprites, only shown below 100 HP, green to red).
+- Sounds reworked to read as firearms (the reference is a conventional voxel shooter, not
+  lasers): every shot, the reload (two mechanical clacks), the explosion and the grenade throw
+  are synthesized with ffmpeg from filtered noise and sine thumps layered over Kenney impact
+  clips. No audio from any other game. The SMG, shotgun and sniper are procedural models too,
+  so the three blaster glTFs were dropped; only `character.glb` and `grenade.glb` remain.

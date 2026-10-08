@@ -21,7 +21,7 @@ import {
   type Scene,
 } from 'three'
 import type { AssetStore } from '../assets/asset-store.ts'
-import { buildRifle } from './rifle-model.ts'
+import { buildWeapon } from './weapon-models.ts'
 
 const TEAM_TINT: Record<Team, string> = { blue: '#9db9ff', red: '#ff9a8c' }
 const TEAM_COLOR: Record<Team, string> = { blue: '#2f6fe4', red: '#e03a3a' }
@@ -182,17 +182,10 @@ export class PlayerView {
     for (const child of [...this.hand.children]) this.hand.remove(child)
     this.heldWeapon = weapon
     if (!weapon) return
-    let held: Object3D
-    if (weapon === 'rifle') {
-      held = buildRifle()
-      // The rifle points down -Z; the character faces +Z.
-      held.rotation.y = Math.PI
-      held.scale.setScalar(1.3)
-    } else {
-      const model = this.assets.model(weapon)
-      if (!model) return
-      held = model.scene.clone(true)
-    }
+    const held = buildWeapon(weapon)
+    // The guns point down -Z; the character faces +Z.
+    held.rotation.y = Math.PI
+    held.scale.setScalar(1.3)
     // The arm pivot sits at the shoulder and the arm hangs about one unit; the muzzle is +Z,
     // the same way the character faces.
     held.position.set(0.05, -0.95, 0.55)

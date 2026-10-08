@@ -228,6 +228,9 @@ export class GameRenderer {
       setMode: (mode: CameraMode) => {
         if (mode !== this.mode) this.toggleMode()
       },
+      setSlot: (slot: number) => {
+        this.slot = slot
+      },
       renderOnce: () => this.frame(performance.now()),
     }
   }

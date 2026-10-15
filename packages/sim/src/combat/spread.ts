@@ -90,6 +90,8 @@ const DEG = Math.PI / 180
 // Softer than the document's ×1.5 and +3°, same playtest.
 const MOVING_HIP = 1.3
 const AIR_HIP = 2
+// Crouching tightens both cones; was ×0.8, the 2026-10-14 playtest asked for a bit more.
+const CROUCH = 0.65
 export const ADS_SNAP = 0.9
 
 // Share of the way from hip to ADS: interpolated during the transition, full only from 90 %.
@@ -112,8 +114,8 @@ export function computeSpread(weapon: WeaponId, ctx: SpreadContext): number {
     ads += 1.5
   }
   if (ctx.crouching) {
-    hip *= 0.8
-    ads *= 0.8
+    hip *= CROUCH
+    ads *= CROUCH
   }
   const blend = adsBlend(ctx.ads)
   return (hip + (ads - hip) * blend) * DEG

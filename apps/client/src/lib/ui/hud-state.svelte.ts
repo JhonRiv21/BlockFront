@@ -2,8 +2,10 @@ import type { WeaponId } from '@blockfront/sim/combat/weapons'
 
 export interface KillFeedEntry {
   id: number
+  // Empty when the victim did it to themselves.
   attacker: string
   victim: string
+  // Weapon id or cause (drowning, fall); the HUD translates it.
   tool: string
   until: number
 }

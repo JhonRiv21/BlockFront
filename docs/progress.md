@@ -776,3 +776,12 @@ Spec: `docs/f2-6-feel.md` §1 and §3. Plus the playtest fixes at the top of the
   `locale.svelte.ts` keeps the current locale as reactive state and exposes `t()`, so the start
   panel's selector can switch it live later. The renderer now emits item keys and the HUD
   translates them. 4 client tests (11).
+- Drowning feedback (2026-10-14): only the red frame remains. Removed the bubble pop sound, the
+  hurt grunt, the damage indicator, the camera jolt and the bubble row shake.
+- Air bubbles (2026-10-14): 9×9 pixel-art symbol like Minecraft's, see-through inside with a
+  pale blue outline, a white highlight and a darker shade; lost bubbles keep the outline at 25 %.
+- Underwater haze and kill feed (2026-10-14): entering water now fogs from 8 to 26 blocks over
+  1.2 s (was 3 to 20 over 2.5 s), tint at 22 % and a lighter vignette. Self-inflicted deaths show
+  only the victim and the cause; feed labels and player names go through the dictionaries.
+- Crouch accuracy (2026-10-14): crouching now multiplies hip and ADS spread by 0.65 (was 0.8),
+  for every weapon. Rifle from the hip crouched: 1.04° instead of 1.28°.

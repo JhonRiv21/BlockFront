@@ -45,6 +45,7 @@ import { BlockCracks } from './block-cracks.ts'
 import { ImpactMarks } from './impact-marks.ts'
 import { Tracers } from './tracers.ts'
 import { ShellCasings } from './shell-casings.ts'
+import { t } from '../i18n/locale.svelte.ts'
 import { ExplosionFx } from './explosion-fx.ts'
 import { GrenadeArc } from './grenade-arc.ts'
 import { CHARGE, throwSpeed, throwVelocity } from '@blockfront/sim/combat/grenade'
@@ -111,27 +112,15 @@ const FOG_FAR = 260
 // Underwater fog: dark blue mixed with the water colour, nearly opaque on entry and clearing to
 // 20 blocks over 2.5 s (Minecraft takes 30 s, too slow for a shooter).
 const UNDERWATER_FOG = new Color('#050533').lerp(new Color('#3f76e4'), 0.45)
-const UNDERWATER_FOG_FAR = 20
-const UNDERWATER_CLEAR_SECONDS = 2.5
+// Entry haze clears from 8 to 26 blocks in 1.2 s; the first second used to hide everything.
+const UNDERWATER_FOG_ENTRY = 8
+const UNDERWATER_FOG_FAR = 26
+const UNDERWATER_CLEAR_SECONDS = 1.2
 // Both on the flat plateau of the blue base, a few blocks past the towers.
 const DUMMY_SPAWNS: [number, number][] = [
   [61, 28],
   [67, 30],
 ]
-
-const TOOL_LABEL: Record<string, string> = {
-  rifle: 'Fusil',
-  carbine: 'Carabina',
-  smg: 'Subfusil',
-  shotgun: 'Escopeta',
-  sniper: 'Francotirador',
-  pistol: 'Pistola',
-  shovel: 'Pala',
-  grenade: 'Granada',
-  blocks: 'Bloque',
-  drowning: 'Ahogado',
-  fall: 'Caída',
-}
 
 const SLOT_COUNT = 5
 
@@ -144,11 +133,11 @@ function matchConfig(seed: number, primary: WeaponId): GameConfig {
   return {
     seed,
     players: [
-      { id: LOCAL_PLAYER_ID, team: 'blue', name: 'Tú', primary },
+      { id: LOCAL_PLAYER_ID, team: 'blue', name: t('player.you'), primary },
       ...DUMMY_SPAWNS.map((spawn, i) => ({
         id: 10 + i,
         team: 'red' as const,
-        name: `Maniquí ${i + 1}`,
+        name: t('player.dummy', { n: i + 1 }),
         dummy: true,
         spawn,
       })),
@@ -225,7 +214,6 @@ export class GameRenderer {
   private blockColor = BUILD_COLORS[0]!
   private primaryRequest: WeaponId | '' = ''
   private aimedBlockId = 0
-  private lastAir = 10
   private scoped = false
   private scopeFade = 0
   private readonly glints = new Map<number, number>()
@@ -513,7 +501,7 @@ export class GameRenderer {
     if (underwater) {
       fog.color.copy(UNDERWATER_FOG)
       fog.near = 0.5
-      fog.far = 3
+      fog.far = UNDERWATER_FOG_ENTRY
       this.renderer.setClearColor(UNDERWATER_FOG)
     } else {
       fog.color.copy(SKY_HORIZON)
@@ -529,7 +517,7 @@ export class GameRenderer {
     this.underwaterSeconds += dt
     const t = Math.min(1, this.underwaterSeconds / UNDERWATER_CLEAR_SECONDS)
     const fog = this.scene.fog as Fog
-    fog.far = 3 + (UNDERWATER_FOG_FAR - 3) * t * t
+    fog.far = UNDERWATER_FOG_ENTRY + (UNDERWATER_FOG_FAR - UNDERWATER_FOG_ENTRY) * t * t
   }
 
   // World zoom by tangents (not by dividing degrees), sensitivity scaled by the same ratio,
@@ -754,11 +742,6 @@ export class GameRenderer {
       if (reloading && !this.wasReloading)
         this.guns.mech(me.slot === 2 ? 'pistol' : me.weapon, LOCAL_PLAYER_ID)
       this.wasReloading = reloading
-      // Each bubble pops a little higher than the last.
-      if (me.air < this.lastAir && me.eyeInWater) {
-        this.sounds.play('hit', { volume: 0.35, rate: 1 + (10 - me.air) * 0.08 })
-      }
-      this.lastAir = me.air
       this.callbacks.onHud({
         player: me,
         hitmarker: this.pendingHitmarker,
@@ -824,7 +807,8 @@ export class GameRenderer {
           this.pendingHitmarker = { head: event.zone === 'head' }
           this.guns.hitmarker(event.zone === 'head')
         }
-        if (event.victim === LOCAL_PLAYER_ID) {
+        // Drowning only shows the red frame: no grunt, no indicator, no camera jolt.
+        if (event.victim === LOCAL_PLAYER_ID && event.tool !== 'drowning') {
           this.sounds.play('hurt', { volume: 0.7 })
           this.pushDamageIndicator(snapshot, event.attacker)
           this.effects.hurtFrom(this.attackerSide(snapshot, event.attacker))
@@ -946,11 +930,12 @@ export class GameRenderer {
 
   private pushKillFeed(snapshot: Snapshot, attacker: number, victim: number, tool: string): void {
     const name = (id: number) => snapshot.players.find((p) => p.id === id)?.name ?? `#${id}`
+    // Own deaths (drowning, fall, cooked grenade) name only the victim and the cause.
     this.killFeed.push({
       id: this.nextFeedId++,
-      attacker: name(attacker),
+      attacker: attacker === victim ? '' : name(attacker),
       victim: name(victim),
-      tool: TOOL_LABEL[tool] ?? tool,
+      tool,
       until: performance.now() + KILL_FEED_MS,
     })
     if (this.killFeed.length > 5) this.killFeed.shift()

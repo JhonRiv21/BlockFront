@@ -57,7 +57,7 @@ describe('computeSpread', () => {
     expect(computeSpread('rifle', { ...still, ads: 1 })).toBeCloseTo(0.08 * DEG, 9)
   })
 
-  it('applies the modifiers: moving ×1.3 / ×1.25, air +2° / +1.5°, crouched ×0.8', () => {
+  it('applies the modifiers: moving ×1.3 / ×1.25, air +2° / +1.5°, crouched ×0.65', () => {
     expect(computeSpread('carbine', { ...still, moving: true })).toBeCloseTo(1.4 * 1.3 * DEG, 9)
     expect(computeSpread('carbine', { ...still, ads: 1, moving: true })).toBeCloseTo(
       0.15 * 1.25 * DEG,
@@ -68,7 +68,8 @@ describe('computeSpread', () => {
       1.65 * DEG,
       9,
     )
-    expect(computeSpread('carbine', { ...still, crouching: true })).toBeCloseTo(1.4 * 0.8 * DEG, 9)
+    expect(computeSpread('carbine', { ...still, crouching: true })).toBeCloseTo(1.4 * 0.65 * DEG, 9)
+    expect(computeSpread('rifle', { ...still, crouching: true })).toBeCloseTo(1.6 * 0.65 * DEG, 9)
   })
 
   it('the sniper moving with the scope gets +1.5°', () => {

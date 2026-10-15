@@ -6,6 +6,11 @@
 
   // Item keys from the renderer and weapon ids map to item.* strings.
   const itemLabel = (key: string) => t(`item.${key}` as StringKey)
+  // Kill feed middle column: weapons by item name, drowning and falls by cause.
+  const causeLabel = (tool: string) =>
+    tool === 'drowning' || tool === 'fall' || tool === 'blocks'
+      ? t(`cause.${tool}` as StringKey)
+      : itemLabel(tool)
 
   const PRIMARIES = ['rifle', 'carbine', 'smg', 'shotgun', 'sniper'] as const
 
@@ -38,7 +43,6 @@
   const lostVisible = $derived(hudState.now - hudState.hurtAt < 600)
   const lowHp = $derived(hudState.alive && hudState.hp <= 20)
   const bubblesVisible = $derived(hudState.eyeInWater || hudState.air < 10)
-  const drowning = $derived(hudState.eyeInWater && hudState.air === 0)
 
   const itemNameOpacity = $derived.by(() => {
     const age = hudState.now - hudState.itemNameAt
@@ -88,13 +92,23 @@
       />
       <path fill="rgba(255,255,255,0.45)" d="M1 2h1v1H1zM2 1h1v1H2z" />
     </symbol>
+    <!-- 9×9 pixel air bubble as in Minecraft: pale blue outline, see-through inside, a white
+         highlight texel top-left and a darker shade bottom-right. -->
+    <symbol id="bubble" viewBox="0 0 9 9">
+      <path
+        fill="currentColor"
+        d="M3 0h3v1H3zM2 1h1v1H2zM6 1h1v1H6zM1 2h1v1H1zM7 2h1v1H7zM0 3h1v3H0zM8 3h1v3H8zM1 6h1v1H1zM7 6h1v1H7zM2 7h1v1H2zM6 7h1v1H6zM3 8h3v1H3z"
+      />
+      <path fill="rgba(255,255,255,0.9)" d="M2 2h1v1H2zM3 1h1v1H3zM1 3h1v2H1z" />
+      <path fill="rgba(30,90,140,0.55)" d="M6 6h1v1H6zM5 7h1v1H5zM7 4h1v2H7z" />
+    </symbol>
   </defs>
 </svg>
 
 <div class="pointer-events-none fixed inset-0 font-hud text-hud select-none">
   {#if hudState.underwater}
     <div
-      class="absolute inset-0 bg-water-tint shadow-[inset_0_0_140px_60px_rgba(5,5,51,0.65)]"
+      class="absolute inset-0 bg-water-tint shadow-[inset_0_0_100px_30px_rgba(5,5,51,0.4)]"
     ></div>
   {/if}
   {#if hurtFlash && hudState.alive}
@@ -126,8 +140,8 @@
   <div class="absolute top-14 right-4 flex flex-col items-end gap-1 text-sm">
     {#each hudState.killFeed as entry (entry.id)}
       <div class="rounded bg-hud-panel px-3 py-1">
-        <span class="font-semibold">{entry.attacker}</span>
-        <span class="text-hud-muted"> [{entry.tool}] </span>
+        {#if entry.attacker}<span class="font-semibold">{entry.attacker}</span>{/if}
+        <span class="text-hud-muted"> [{causeLabel(entry.tool)}] </span>
         <span class="font-semibold">{entry.victim}</span>
       </div>
     {/each}
@@ -289,13 +303,17 @@
   <!-- Health and air -->
   <div class="absolute bottom-6 left-6 flex flex-col gap-1.5">
     {#if bubblesVisible}
-      <div class="flex gap-0.5 {drowning ? 'animate-shake' : ''}">
+      <div class="flex gap-0.5">
         {#each Array.from({ length: 10 }, (_, i) => i) as i (i)}
-          <span
-            class="size-4 rounded-full border-2 {i < hudState.air
-              ? 'border-sky-100 bg-sky-300/80'
-              : 'border-sky-100/30 bg-transparent'}"
-          ></span>
+          <svg
+            class="size-5 drop-shadow-[0_1px_0_rgba(0,0,0,0.5)] {i < hudState.air
+              ? 'text-[#bfe6ff]'
+              : 'text-[#bfe6ff]/25'}"
+            viewBox="0 0 9 9"
+            shape-rendering="crispEdges"
+          >
+            <use href="#bubble" />
+          </svg>
         {/each}
       </div>
     {/if}

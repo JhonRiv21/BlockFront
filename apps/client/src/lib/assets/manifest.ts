@@ -8,19 +8,13 @@ export const MODELS = {
 export type ModelName = keyof typeof MODELS
 
 export const SOUNDS = {
-  'shot-rifle': '/audio/shot-rifle.m4a',
-  'shot-smg': '/audio/shot-smg.m4a',
-  'shot-shotgun': '/audio/shot-shotgun.m4a',
-  'shot-sniper': '/audio/shot-sniper.m4a',
   hit: '/audio/hit.m4a',
   'hit-head': '/audio/hit-head.m4a',
   hurt: '/audio/hurt.m4a',
   death: '/audio/death.m4a',
-  reload: '/audio/reload.m4a',
   shovel: '/audio/shovel.m4a',
   'grenade-throw': '/audio/grenade-throw.m4a',
   'grenade-bounce': '/audio/grenade-bounce.m4a',
-  explosion: '/audio/explosion.m4a',
   'footstep-0': '/audio/footstep-0.m4a',
   'footstep-1': '/audio/footstep-1.m4a',
   'footstep-2': '/audio/footstep-2.m4a',
@@ -30,6 +24,11 @@ export const SOUNDS = {
   'block-break-2': '/audio/block-break-2.m4a',
   'block-hit': '/audio/block-hit.m4a',
   'block-place': '/audio/block-place.m4a',
+  'aim-in': '/audio/aim-in.m4a',
+  'aim-out': '/audio/aim-out.m4a',
+  'land-thud': '/audio/land-thud.m4a',
+  'land-crunch': '/audio/land-crunch.m4a',
+  'grenade-tick': '/audio/grenade-tick.m4a',
 } as const
 
 export type SoundName = keyof typeof SOUNDS

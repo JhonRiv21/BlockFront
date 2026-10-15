@@ -27,12 +27,43 @@ export const mountGame: Attachment<HTMLCanvasElement> = (canvas) => {
     },
     onView: (yaw) => {
       hudState.yaw = yaw
+      hudState.now = performance.now()
     },
     onAssetsReady: () => {
       hudState.assetsReady = true
     },
+    onUnderwater: (underwater) => {
+      hudState.underwater = underwater
+    },
+    onScope: (scoped, fade) => {
+      hudState.scoped = scoped
+      hudState.scopeFade = fade
+    },
+    onBlast: (strength) => {
+      hudState.blastAt = performance.now()
+      hudState.blastStrength = strength
+    },
+    onDryFire: () => {
+      hudState.dryFireAt = performance.now()
+    },
+    onItem: (name) => {
+      hudState.itemName = name
+      hudState.itemNameAt = performance.now()
+    },
     onHud: ({ player, hitmarker, killFeed, damageIndicators }) => {
-      hudState.hp = Math.ceil(player.hp)
+      if (player.hp < hudState.hp) {
+        hudState.hpBefore = hudState.hp
+        hudState.hurtAt = performance.now()
+      } else if (player.hp > hudState.hp) {
+        hudState.hpBefore = player.hp
+      }
+      hudState.hp = player.hp
+      hudState.air = player.air
+      hudState.eyeInWater = player.eyeInWater
+      hudState.pistolMag = player.pistolMag
+      hudState.pistolReserve = player.pistolReserve
+      hudState.pistolReloading = player.pistolReloading
+      hudState.blockColor = player.blockColor
       hudState.alive = player.alive
       hudState.respawnIn = player.respawnIn
       hudState.slot = player.slot
@@ -40,10 +71,13 @@ export const mountGame: Attachment<HTMLCanvasElement> = (canvas) => {
       hudState.mag = player.mag
       hudState.reserve = player.reserve
       hudState.reloading = player.reloading
+      hudState.reloadLeft = player.reloadLeft
+      hudState.reloadTotal = player.reloadTotal
       hudState.blocks = player.blocks
       hudState.grenades = player.grenades
       hudState.cooking = player.cooking
       hudState.spread = player.spread
+      hudState.ads = player.ads
       hudState.killFeed = killFeed
       hudState.damageIndicators = damageIndicators
       if (hitmarker) {
@@ -56,6 +90,7 @@ export const mountGame: Attachment<HTMLCanvasElement> = (canvas) => {
       }
     },
   })
+  hudState.selectPrimary = (weapon) => renderer.setPrimary(weapon)
   renderer.start()
   if (import.meta.env.DEV) {
     // window.blockfront.pool.stats(), .transport.stepStats(), .snapshot(), .assets, .renderOnce()

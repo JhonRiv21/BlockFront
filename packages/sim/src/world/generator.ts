@@ -1,6 +1,7 @@
 import { WORLD_SIZE } from '../config.ts'
 import { createPrng, createValueNoise2D, fbm2D } from './noise.ts'
-import { BLOCK, mirrorBlock, type BlockId } from './palette.ts'
+import { BLOCK, mirrorBlock, type BlockId } from './blocks.ts'
+import { hash3 } from './hash.ts'
 import { World } from './world.ts'
 
 export interface TerrainParams {
@@ -129,9 +130,109 @@ export function generateWorld(seed: number, params: TerrainParams = TERRAIN): Wo
       for (let y = 0; y <= top; y++) place(x, y, z, columnBlock(y, height, params))
     }
 
+  plantTrees(world, heights, seed, params, place)
+  plantDecor(world, heights, seed, params, place)
+
   const baseFloor =
     heights[WORLD_SIZE.x / 2 + params.baseCenterZ * WORLD_SIZE.x] ?? params.baseHeight
   buildBase(place, baseFloor, params)
 
   return world
+}
+
+type Place = (x: number, y: number, z: number, id: BlockId) => void
+
+const TREE_CELL = 7
+const TREE_DENSITY = 0.55
+const CORRIDOR_HALF_WIDTH = 6
+const BASE_MARGIN = 3
+
+// Ground that may carry vegetation: grass, outside the base and the corridor between the flags.
+function vegetationAllowed(x: number, z: number, height: number, params: TerrainParams): boolean {
+  if (height <= params.seaLevel + 1) return false
+  const dx = x + 0.5 - WORLD_SIZE.x / 2
+  const dz = z + 0.5 - params.baseCenterZ
+  if (Math.sqrt(dx * dx + dz * dz) <= params.baseRadius + BASE_MARGIN) return false
+  return Math.abs(dx) > CORRIDOR_HALF_WIDTH
+}
+
+// Jittered grid: one candidate per 7×7 cell, kept by an integer hash and a biome noise, so the
+// same seed always grows the same forest.
+function plantTrees(
+  world: World,
+  heights: Uint8Array,
+  seed: number,
+  params: TerrainParams,
+  place: Place,
+): void {
+  const halfZ = WORLD_SIZE.z / 2
+  const biome = createValueNoise2D(createPrng(seed ^ 0x5bd1e995))
+  for (let cz = 0; cz * TREE_CELL < halfZ; cz++)
+    for (let cx = 0; cx * TREE_CELL < WORLD_SIZE.x; cx++) {
+      const h = hash3(cx, cz, seed)
+      const x = cx * TREE_CELL + 1 + (h % (TREE_CELL - 2))
+      const z = cz * TREE_CELL + 1 + (Math.floor(h / 8) % (TREE_CELL - 2))
+      if (x >= WORLD_SIZE.x || z >= halfZ) continue
+      const density = biome(x / 24 + 11.7, z / 24 + 5.3)
+      const roll = (Math.floor(h / 64) % 1000) / 1000
+      if (roll > TREE_DENSITY * density * 1.6) continue
+      const height = heights[x + z * WORLD_SIZE.x] ?? 0
+      if (!vegetationAllowed(x, z, height, params)) continue
+      if (world.getBlock(x, height, z) !== BLOCK.grass) continue
+      growTree(world, x, height + 1, z, hash3(x, z, seed ^ 0x27d4eb2f), place)
+    }
+}
+
+// Trunk of 4–6 logs and one of three canopy shapes, trimmed at the rim by hash.
+function growTree(world: World, x: number, y: number, z: number, h: number, place: Place): void {
+  const trunk = 4 + (h % 3)
+  const shape = Math.floor(h / 4) % 3
+  if (y + trunk + 3 >= WORLD_SIZE.y) return
+  const top = y + trunk - 1
+  const radius = shape === 1 ? 3 : 2
+  const squash = shape === 1 ? 1.3 : 1
+  for (let dy = -radius; dy <= radius; dy++)
+    for (let dz = -radius; dz <= radius; dz++)
+      for (let dx = -radius; dx <= radius; dx++) {
+        let inside: boolean
+        if (shape === 2) inside = Math.abs(dx) + Math.abs(dy) + Math.abs(dz) < radius * 3 - 1
+        else {
+          const d2 = dx * dx + dy * dy * squash * squash + dz * dz
+          inside =
+            d2 < radius * radius ||
+            (d2 <= radius * radius + 1 && hash3(x + dx, top + dy, z + dz) % 2 === 0)
+        }
+        if (!inside) continue
+        if (dy < 0 && dx === 0 && dz === 0) continue
+        const ly = top + dy
+        if (ly <= y - 1 || !world.inBounds(x + dx, ly, z + dz)) continue
+        if (world.getBlock(x + dx, ly, z + dz) === BLOCK.air)
+          place(x + dx, ly, z + dz, BLOCK.leaves)
+      }
+  for (let i = 0; i < trunk; i++) place(x, y + i, z, BLOCK.log)
+}
+
+// Tall grass and flowers on open grass, one block tall.
+function plantDecor(
+  world: World,
+  heights: Uint8Array,
+  seed: number,
+  params: TerrainParams,
+  place: Place,
+): void {
+  const halfZ = WORLD_SIZE.z / 2
+  for (let z = 0; z < halfZ; z++)
+    for (let x = 0; x < WORLD_SIZE.x; x++) {
+      const height = heights[x + z * WORLD_SIZE.x] ?? 0
+      if (!vegetationAllowed(x, z, height, params)) continue
+      if (world.getBlock(x, height, z) !== BLOCK.grass) continue
+      if (world.getBlock(x, height + 1, z) !== BLOCK.air) continue
+      if (world.getBlock(x, height + 2, z) !== BLOCK.air) continue
+      const roll = hash3(x, z, seed ^ 0x165667b1) % 1000
+      let id: BlockId | null = null
+      if (roll < 70) id = BLOCK.tallGrass
+      else if (roll < 80) id = BLOCK.flower
+      else if (roll < 90) id = BLOCK.flowerYellow
+      if (id !== null) place(x, height + 1, z, id)
+    }
 }

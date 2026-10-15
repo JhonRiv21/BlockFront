@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BLOCK } from '../world/palette.ts'
+import { BLOCK } from '../world/blocks.ts'
 import { World } from '../world/world.ts'
 import { BlockHealth, BLOCK_HP, explodeBlocks } from './blocks.ts'
 

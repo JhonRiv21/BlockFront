@@ -233,7 +233,34 @@ verde y una nota en `docs/progress.md` (qué se hizo, números medidos, pendient
 - **Hecho cuando**: dos maniquíes estáticos reciben daño correcto según zona y distancia, y el
   game feel de la sección 3 está completo.
 
+### F2.5 — Pulido: mundo, agua, HUD y armas
+Especificación completa, con números y fuentes, en [`docs/f2-5-polish.md`](docs/f2-5-polish.md).
+Se ejecuta en cinco partes, en orden:
+- **A, mundo visual:** registro de bloques con caras, texturas procedurales horneadas, árboles y
+  vegetación, skylight, cielo, tone mapping y niebla esférica.
+- **B, agua:** agua estática con render translúcido y física de nado.
+- **C, HUD estilo Minecraft:** corazones, burbujas de aire, hotbar de 5 ranuras y selector de color.
+- **D, armas:** ADS con miras por arma, carabina, pistola, telescopio híbrido y retroceso por arma.
+- **E, primera persona:** brazos de bloques, animación por resortes, pala y bloque, grietas,
+  trazadoras y casquillos.
+- **Hecho cuando**:
+  - Cada parte cumple su sección del documento.
+  - Se respetan los presupuestos del §6.
+  - Jhon aprueba el look y la sensación en una pestaña visible.
+
+### F2.6 — Sensación: pala, mira, sonido, granada y caída
+Correcciones tras el playtest, con fuentes y números en [`docs/f2-6-feel.md`](docs/f2-6-feel.md).
+- **Parte A:** cadera contra ADS, daño por caída, agacharse en el borde y granada con carga.
+- **Parte B:** pala estilo Minecraft y motor de sonido con grabaciones reales CC0.
+- **Hecho cuando:** Jhon aprueba la sensación en una pestaña visible.
+
 ### F3 — CTF + bots → **Entrega 1 (presentable)**
+- **Agregado tras F2.6 (aprobado por Jhon):**
+  - Protección al aparecer.
+  - TNT y bloque reforzado.
+  - Escalera de mano y botiquín.
+  - Los bloques de un equipo solo los rompen los enemigos (decisión D3).
+  - Diseño de cada uno en `docs/f2-6-feel.md` §6.
 - Reglas de CTF, banderas, oleadas, recarga en base y marcador.
 - Bots completos: percepción, A* con excavar y construir, roles, behavior trees y 3 dificultades.
 - Menú:

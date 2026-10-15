@@ -120,3 +120,74 @@ describe('meshChunk', () => {
     }
   })
 })
+
+// Written from docs/f2-5-polish.md §1.1–1.3: faces carry a texture layer from the registry,
+// merging keys on (layer, AO), cross blocks go to a separate decor mesh and liquids to their own.
+import { BLOCK, FACE_LAYER, FACE, LAYER } from './blocks.ts'
+
+describe('meshChunk with the block registry', () => {
+  it('gives every vertex the layer of its face', () => {
+    const voxels = emptyPadded()
+    fillBox(voxels, [4, 4, 4], [5, 5, 5], BLOCK.grass)
+    const mesh = meshChunk(voxels)
+    expect(mesh.layers.length).toBe(mesh.positions.length / 3)
+    const layersSeen = new Set(Array.from(mesh.layers))
+    expect(layersSeen).toEqual(new Set([LAYER.grassTop, LAYER.grassSide, LAYER.dirt]))
+    for (let v = 0; v < mesh.layers.length; v++) {
+      const ny = mesh.normals[v * 3 + 1]
+      if (ny === 1) expect(mesh.layers[v]).toBe(LAYER.grassTop)
+      if (ny === -1) expect(mesh.layers[v]).toBe(LAYER.dirt)
+      if (ny === 0) expect(mesh.layers[v]).toBe(LAYER.grassSide)
+    }
+    expect(FACE_LAYER[BLOCK.grass * 6 + FACE.top]).toBe(LAYER.grassTop)
+  })
+
+  it('still merges a grass slab into 6 quads: each face has one layer', () => {
+    const voxels = emptyPadded()
+    fillBox(voxels, [0, 0, 0], [S, 1, S], BLOCK.grass)
+    expect(meshChunk(voxels).quadCount).toBe(6)
+  })
+
+  it('puts cross blocks in the decor mesh as two quads and no cube faces', () => {
+    const voxels = emptyPadded()
+    fillBox(voxels, [3, 3, 3], [4, 4, 4], BLOCK.tallGrass)
+    const mesh = meshChunk(voxels)
+    expect(mesh.quadCount).toBe(0)
+    expect(mesh.decor.quadCount).toBe(2)
+    expect(mesh.decor.positions.length).toBe(2 * 4 * 3)
+    expect(mesh.decor.uvs.length).toBe(2 * 4 * 2)
+    expect(mesh.decor.indices.length).toBe(2 * 6)
+    expect(Array.from(mesh.decor.layers).every((l) => l === LAYER.tallGrass)).toBe(true)
+    // Diagonal planes inside the block, one block tall.
+    for (let v = 0; v < 8; v++) {
+      expect(mesh.decor.positions[v * 3 + 1]).toBeGreaterThanOrEqual(3)
+      expect(mesh.decor.positions[v * 3 + 1]).toBeLessThanOrEqual(4)
+    }
+  })
+
+  it('does not hide a cube face behind a cross block or behind water', () => {
+    const voxels = emptyPadded()
+    fillBox(voxels, [4, 4, 4], [5, 5, 5], BLOCK.stone)
+    fillBox(voxels, [5, 4, 4], [6, 5, 5], BLOCK.tallGrass)
+    fillBox(voxels, [3, 4, 4], [4, 5, 5], BLOCK.water)
+    expect(meshChunk(voxels).quadCount).toBe(6)
+  })
+
+  it('meshes water in its own pass with the top lowered and no water-water faces', () => {
+    const voxels = emptyPadded()
+    fillBox(voxels, [0, 0, 0], [S, 1, S], BLOCK.sand)
+    fillBox(voxels, [0, 1, 0], [S, 3, S], BLOCK.water)
+    const mesh = meshChunk(voxels)
+    // Water is not opaque, so the sand keeps all 6 faces and draws under the water.
+    expect(mesh.quadCount).toBe(6)
+    expect(mesh.liquid.quadCount).toBe(5)
+    for (let v = 0; v < mesh.liquid.normals.length; v += 3)
+      expect(mesh.liquid.normals[v + 1]).not.toBe(-1)
+    const tops = []
+    for (let v = 0; v < mesh.liquid.normals.length / 3; v++) {
+      if (mesh.liquid.normals[v * 3 + 1] === 1) tops.push(mesh.liquid.positions[v * 3 + 1])
+    }
+    expect(tops.length).toBe(4)
+    for (const y of tops) expect(y).toBeCloseTo(2 + 8 / 9, 5)
+  })
+})

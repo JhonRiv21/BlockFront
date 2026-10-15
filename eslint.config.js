@@ -23,6 +23,7 @@ export default ts.config(
   {
     files: [
       '*.js',
+      'scripts/**/*.mjs',
       '*.config.ts',
       'apps/*/*.config.ts',
       'apps/*/*.config.js',

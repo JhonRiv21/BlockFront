@@ -15,6 +15,7 @@ export interface SweepHit {
 }
 
 const AXES = ['x', 'y', 'z'] as const
+const CORNER_EPSILON = 1e-6
 
 interface Collision {
   axis: number
@@ -74,8 +75,11 @@ function sweepOnce(isSolid: SolidTest, box: Aabb, vec: Vec3): Collision | null {
 
     const plane = leadVoxel[axis]! + step[axis]!
     for (let j = 0; j < 3; j++) {
-      lo[j] = Math.floor(box.min[j]! + vec[j]! * t)
-      hi[j] = Math.ceil(box.max[j]! + vec[j]! * t) - 1
+      // The other axes include the voxel they are about to enter at this same instant, so a
+      // box reaching two boundaries at once cannot slip diagonally through a corner.
+      const lead = j !== axis && vec[j]! !== 0 ? CORNER_EPSILON * step[j]! : 0
+      lo[j] = Math.floor(box.min[j]! + vec[j]! * t + Math.min(lead, 0))
+      hi[j] = Math.ceil(box.max[j]! + vec[j]! * t + Math.max(lead, 0)) - 1
     }
     if (anySolidInPlane(isSolid, axis, plane, lo, hi)) {
       for (let j = 0; j < 3; j++) {

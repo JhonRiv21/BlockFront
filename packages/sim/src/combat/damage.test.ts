@@ -47,3 +47,23 @@ describe('damageFor', () => {
     expect(damageFor('shovel', 'limbs', 2)).toBe(60)
   })
 })
+
+describe('pistol damage (docs/f2-5-polish.md §4.4)', () => {
+  it('30 / 80 / 20 up to 15 blocks and 70% from 40 on', () => {
+    expect(damageFor('pistol', 'torso', 5)).toBe(30)
+    expect(damageFor('pistol', 'head', 15)).toBe(80)
+    expect(damageFor('pistol', 'limbs', 1)).toBe(20)
+    expect(damageFor('pistol', 'torso', 40)).toBeCloseTo(21, 9)
+    expect(damageFor('pistol', 'head', 100)).toBeCloseTo(56, 9)
+  })
+})
+
+describe('carbine damage (docs/f2-5-polish.md §4.4)', () => {
+  it('28 / 70 / 20 up to 35 blocks and 75% from 70 on', () => {
+    expect(damageFor('carbine', 'torso', 10)).toBe(28)
+    expect(damageFor('carbine', 'head', 35)).toBe(70)
+    expect(damageFor('carbine', 'limbs', 2)).toBe(20)
+    expect(damageFor('carbine', 'torso', 70)).toBeCloseTo(21, 9)
+    expect(damageFor('carbine', 'torso', 120)).toBeCloseTo(21, 9)
+  })
+})

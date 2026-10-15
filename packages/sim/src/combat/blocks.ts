@@ -1,6 +1,6 @@
 import { WORLD_SIZE } from '../config.ts'
 import type { Vec3 } from '../physics/sweep.ts'
-import { BLOCK } from '../world/palette.ts'
+import { BLOCK } from '../world/blocks.ts'
 import type { World } from '../world/world.ts'
 
 export const BLOCK_HP = 100

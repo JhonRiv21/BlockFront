@@ -1,4 +1,5 @@
-import { CROUCH_SPREAD_FACTOR, WEAPONS, type WeaponId } from './weapons.ts'
+import { computeSpread, maxBloom, SPREAD, type SpreadContext } from './spread.ts'
+import { WEAPONS, type WeaponId } from './weapons.ts'
 
 export interface WeaponState {
   weapon: WeaponId
@@ -7,8 +8,10 @@ export interface WeaponState {
   cooldown: number
   reloading: boolean
   reloadLeft: number
-  // Consecutive-fire heat in shots; decays over time and widens the spread.
-  heat: number
+  // Seconds the whole reload takes, fixed when it starts; the HUD ring fills against it.
+  reloadTotal: number
+  // Consecutive-fire bloom in shots; decays linearly and widens the spread.
+  bloom: number
 }
 
 export interface WeaponInput {
@@ -28,7 +31,8 @@ export function createWeaponState(weapon: WeaponId): WeaponState {
     cooldown: 0,
     reloading: false,
     reloadLeft: 0,
-    heat: 0,
+    reloadTotal: 0,
+    bloom: 0,
   }
 }
 
@@ -42,8 +46,13 @@ function loadRounds(state: WeaponState, count: number): void {
 // Advances timers and applies the trigger and reload inputs for one tick.
 export function stepWeapon(state: WeaponState, dt: number, input: WeaponInput): 'fired' | null {
   const spec = WEAPONS[state.weapon]
-  state.cooldown = Math.max(0, state.cooldown - dt)
-  state.heat = Math.max(0, state.heat - spec.spread.recoveryPerSecond * dt)
+  // The remainder of a cooldown that ends mid-tick carries into the next shot so the average
+  // rate is exact; from idle there is nothing to carry.
+  const wasCooling = state.cooldown > 0
+  state.cooldown -= dt
+  const spread = SPREAD[state.weapon]
+  const recoverShots = spread.hip.perShot > 0 ? spread.recoveryPerSecond / spread.hip.perShot : 0
+  state.bloom = Math.max(0, state.bloom - recoverShots * dt)
 
   if (state.reloading) {
     state.reloadLeft -= dt
@@ -65,8 +74,8 @@ export function stepWeapon(state: WeaponState, dt: number, input: WeaponInput): 
     if (state.reloading && !spec.reloadPerShell) return null
     state.reloading = false
     state.mag--
-    state.cooldown += spec.fireInterval
-    state.heat = Math.min(state.heat + 1, spec.spread.max / Math.max(spec.spread.perShot, EPSILON))
+    state.cooldown = (wasCooling ? state.cooldown : 0) + spec.fireInterval
+    state.bloom = Math.min(state.bloom + 1, maxBloom(state.weapon))
     fired = 'fired'
   }
 
@@ -75,15 +84,29 @@ export function stepWeapon(state: WeaponState, dt: number, input: WeaponInput): 
   if (wantsReload && !state.reloading && state.mag < spec.magazine && state.reserve > 0) {
     state.reloading = true
     state.reloadLeft = spec.reloadSeconds
+    state.reloadTotal = reloadRemaining(state)
   }
   return fired
 }
 
-// Current cone half-angle in radians.
+// Seconds until the reload in progress fully ends; a shell-by-shell reload counts every shell
+// that still fits. 0 when not reloading.
+export function reloadRemaining(state: WeaponState): number {
+  if (!state.reloading) return 0
+  const spec = WEAPONS[state.weapon]
+  if (!spec.reloadPerShell) return Math.max(0, state.reloadLeft)
+  const shellsAfter = Math.max(0, Math.min(spec.magazine - state.mag, state.reserve) - 1)
+  return Math.max(0, state.reloadLeft) + shellsAfter * spec.reloadSeconds
+}
+
+// Current cone half-angle in radians for a standing, grounded shooter.
 export function currentSpread(state: WeaponState, crouching: boolean, aiming: boolean): number {
-  const { spread } = WEAPONS[state.weapon]
-  const degrees = aiming
-    ? spread.aimed
-    : Math.min(spread.max, spread.base + state.heat * spread.perShot)
-  return ((degrees * Math.PI) / 180) * (crouching ? CROUCH_SPREAD_FACTOR : 1)
+  const ctx: SpreadContext = {
+    ads: aiming ? 1 : 0,
+    bloom: state.bloom,
+    moving: false,
+    airborne: false,
+    crouching,
+  }
+  return computeSpread(state.weapon, ctx)
 }

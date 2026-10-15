@@ -1,13 +1,25 @@
 import { CHUNK_SIZE } from '@blockfront/sim/config'
-import type { ChunkMesh } from '@blockfront/sim/world/mesher'
-import type { BlockId } from '@blockfront/sim/world/palette'
+import type { BlockId } from '@blockfront/sim/world/blocks'
+import type { ChunkMesh, DecorMesh, SurfaceMesh } from '@blockfront/sim/world/mesher'
 import { chunkKey, type ChunkCoord, type World } from '@blockfront/sim/world/world'
 import { BufferAttribute, BufferGeometry, Mesh, type Material, type Scene } from 'three'
 import type { MesherPool } from '../mesher/mesher-pool.ts'
 
-// Keeps one Three mesh per chunk in sync with the sim World through the mesher pool.
+export interface WorldMaterials {
+  opaque: Material
+  liquid: Material
+  decor: Material
+}
+
+interface ChunkMeshes {
+  opaque: Mesh | null
+  liquid: Mesh | null
+  decor: Mesh | null
+}
+
+// Keeps the Three meshes of every chunk (opaque, liquid, decor) in sync with the sim World.
 export class WorldView {
-  private readonly meshes = new Map<number, Mesh>()
+  private readonly meshes = new Map<number, ChunkMeshes>()
   private readonly quadsByChunk = new Map<number, number>()
   private disposed = false
 
@@ -15,7 +27,7 @@ export class WorldView {
     private readonly scene: Scene,
     private readonly world: World,
     private readonly pool: MesherPool,
-    private readonly material: Material,
+    private readonly materials: WorldMaterials,
   ) {}
 
   get totalQuads(): number {
@@ -44,11 +56,7 @@ export class WorldView {
 
   dispose(): void {
     this.disposed = true
-    for (const mesh of this.meshes.values()) {
-      this.scene.remove(mesh)
-      mesh.geometry.dispose()
-    }
-    this.meshes.clear()
+    for (const key of [...this.meshes.keys()]) this.removeMeshes(key)
     this.quadsByChunk.clear()
   }
 
@@ -60,29 +68,71 @@ export class WorldView {
     this.apply(key, coord, mesh)
   }
 
-  private apply(key: number, coord: ChunkCoord, chunkMesh: ChunkMesh): void {
-    const previous = this.meshes.get(key)
-    if (previous) {
-      this.scene.remove(previous)
-      previous.geometry.dispose()
-      this.meshes.delete(key)
+  private removeMeshes(key: number): void {
+    const existing = this.meshes.get(key)
+    if (!existing) return
+    for (const mesh of [existing.opaque, existing.liquid, existing.decor]) {
+      if (!mesh) continue
+      this.scene.remove(mesh)
+      mesh.geometry.dispose()
     }
-    this.quadsByChunk.set(key, chunkMesh.quadCount)
-    if (chunkMesh.quadCount === 0) return
+    this.meshes.delete(key)
+  }
 
+  private apply(key: number, coord: ChunkCoord, chunkMesh: ChunkMesh): void {
+    this.removeMeshes(key)
+    this.quadsByChunk.set(
+      key,
+      chunkMesh.quadCount + chunkMesh.liquid.quadCount + chunkMesh.decor.quadCount,
+    )
+    const entry: ChunkMeshes = {
+      opaque: this.surfaceMesh(coord, chunkMesh, this.materials.opaque, 0),
+      liquid: this.surfaceMesh(coord, chunkMesh.liquid, this.materials.liquid, 2),
+      decor: this.decorMesh(coord, chunkMesh.decor),
+    }
+    this.meshes.set(key, entry)
+  }
+
+  private surfaceMesh(
+    coord: ChunkCoord,
+    surface: SurfaceMesh,
+    material: Material,
+    renderOrder: number,
+  ): Mesh | null {
+    if (surface.quadCount === 0) return null
     const geometry = new BufferGeometry()
-    geometry.setAttribute('position', new BufferAttribute(chunkMesh.positions, 3))
-    geometry.setAttribute('normal', new BufferAttribute(chunkMesh.normals, 3))
-    geometry.setAttribute('blockId', new BufferAttribute(chunkMesh.blockIds, 1))
-    geometry.setAttribute('ao', new BufferAttribute(chunkMesh.ao, 1))
-    geometry.setIndex(new BufferAttribute(chunkMesh.indices, 1))
-    geometry.computeBoundingSphere()
+    geometry.setAttribute('position', new BufferAttribute(surface.positions, 3))
+    geometry.setAttribute('normal', new BufferAttribute(surface.normals, 3))
+    geometry.setAttribute('layer', new BufferAttribute(surface.layers, 1))
+    geometry.setAttribute('blockId', new BufferAttribute(surface.blockIds, 1))
+    geometry.setAttribute('ao', new BufferAttribute(surface.ao, 1))
+    geometry.setIndex(new BufferAttribute(surface.indices, 1))
+    return this.place(coord, geometry, material, renderOrder)
+  }
 
-    const mesh = new Mesh(geometry, this.material)
+  private decorMesh(coord: ChunkCoord, decor: DecorMesh): Mesh | null {
+    if (decor.quadCount === 0) return null
+    const geometry = new BufferGeometry()
+    geometry.setAttribute('position', new BufferAttribute(decor.positions, 3))
+    geometry.setAttribute('uv', new BufferAttribute(decor.uvs, 2))
+    geometry.setAttribute('layer', new BufferAttribute(decor.layers, 1))
+    geometry.setIndex(new BufferAttribute(decor.indices, 1))
+    return this.place(coord, geometry, this.materials.decor, 1)
+  }
+
+  private place(
+    coord: ChunkCoord,
+    geometry: BufferGeometry,
+    material: Material,
+    renderOrder: number,
+  ): Mesh {
+    geometry.computeBoundingSphere()
+    const mesh = new Mesh(geometry, material)
     mesh.position.set(coord.cx * CHUNK_SIZE, coord.cy * CHUNK_SIZE, coord.cz * CHUNK_SIZE)
     mesh.matrixAutoUpdate = false
     mesh.updateMatrix()
+    mesh.renderOrder = renderOrder
     this.scene.add(mesh)
-    this.meshes.set(key, mesh)
+    return mesh
   }
 }

@@ -333,3 +333,446 @@ errors appeared while shots, particles and sounds fired.
   are synthesized with ffmpeg from filtered noise and sine thumps layered over Kenney impact
   clips. No audio from any other game. The SMG, shotgun and sniper are procedural models too,
   so the three blaster glTFs were dropped; only `character.glb` and `grenade.glb` remain.
+
+## F2.5 part A — Visual world (2026-10-08) — done
+
+Spec: `docs/f2-5-polish.md` §1. Tests written from that section before the implementation.
+
+**Done**
+
+- **Block registry** (`packages/sim/src/world/blocks.ts`, noa-style): `BlockDef` with per-face
+  layers, `render` kind (cube / cross / liquid / none), solid, opaque, liquid and tint, compiled
+  into `FACE_LAYER` (`Uint8Array(256 * 6)`) and `FLAGS` (`Uint8Array(256)`, bits solid / opaque /
+  liquid / cross / cube). Grass is `grass_top` / `grass_side` / `dirt`, logs are rings and bark.
+  New blocks: log, leaves (opaque), tall grass, red and yellow flowers (cross), water (liquid, not
+  solid, lets light through). Player blocks are the plain layer times a palette tint. The old
+  `palette.ts` is gone; `PALETTE` (particle colours) now comes from the registry.
+- **Baked textures**: 18 layers of 16×16 RGBA generated in code (`bake-textures.ts`: grain,
+  veins, rings, bark grooves, mottled leaves with painted holes, sand, gravel, grass blades, a
+  green fringe on `grass_side`, a one-texel darkened border, alpha cut-outs for the plants) and
+  uploaded as a `DataArrayTexture` in sRGB with mipmaps and `NearestMipmapLinear`. **Deviation
+  from the spec:** the bake runs on the main thread, not in a worker: 4.6 k texels take 3–6 ms,
+  less than the message round trip would cost, and the world cannot draw before it anyway.
+- **Mesher**: merge key is now (block, AO) with the layer taken from the face, so a grass slab is
+  still 6 quads; faces are visible when the neighbour is not opaque, water gets its own pass (no
+  water-water faces, tops at 8/9) and cross blocks go to a `decor` mesh with explicit UVs outside
+  the greedy pass. Per-vertex attributes: position, normal, layer, blockId, AO.
+- **Shaders** (`voxel-material.ts`, GLSL3): `sampler2DArray` with the UV derived from position
+  and normal (one repeat per block, no UV attribute), per-voxel hash tint kept, tint table from
+  the registry, `sampler3D` skylight sampled at `worldPos + normal * 0.5` with linear filtering,
+  hemisphere + sun scaled by the skylight, spherical fog (`length(mvPosition)`), ACES tone mapping
+  and sRGB output. Decor shader: alpha discard, double sided, wind sway on the top vertices.
+  Liquid: same shader with opacity 0.72, transparent, no depth write (a stand-in until part B).
+- **Trees and plants** (`generator.ts`): jittered 7×7 grid, integer `hash3` (no `Math.random`),
+  biome value noise for density, never within the base radius + 3 nor in the ±6 corridor between
+  the flags, mirrored like everything else. Trunks of 4–6 logs, three canopy shapes (sphere r2,
+  squashed sphere r3, cube without corners) trimmed at the rim by hash. Tall grass 7 %, flowers
+  2 % on open grass with two blocks of air above. The sim deletes a plant when the block under it
+  breaks (`clearDecorAbove`), and plants never block movement, bullets or placing.
+- **Skylight** (`skylight.ts`, Seeds of Andromeda): sun columns at 15 straight down, BFS with −1
+  per step, removal BFS on placed blocks and re-seeding on removed ones; `updateSkylight` keeps
+  the array identical to a fresh `computeSkylight` (tested). The first fill runs in
+  `light.worker.ts` from the seed; edits re-flood on the main thread and the `Data3DTexture`
+  (R8, 128×64×192, 1.5 MB) re-uploads with an 80 ms throttle. `skyIntensity` uniform left for a
+  day/night cycle.
+- **Sky**: gradient dome (zenith `#3f7fd9` → horizon `#b9d7f2`) with a sun disc, following the
+  camera; the fog uses the horizon colour. Spherical fog also patched into the standard materials
+  of players, held weapons, grenades and particles through `onBeforeCompile`.
+- Tests: registry tables (10), skylight (10), vegetation (6), mesher with the registry (5), Game
+  vegetation rules (2). 125/125 in `sim`.
+
+**Measured**
+
+| Metric                                           | Value                                                                                         |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| Map quads (seed 1, with trees, plants and water) | 48 675 opaque quads in Node; 51 658 total in the client incl. liquid and decor                |
+| Mesher per chunk, Node 22 warm                   | 2.83 ms avg / 4.62 ms max (38 of 48 chunks non-empty)                                         |
+| Mesher per chunk, Chrome worker, hidden tab      | cold 17 ms avg / 51 ms max; warm 6.7 ms avg / 11.7 ms max (throttled tab)                     |
+| Skylight, first fill of the whole map            | 85 ms in Node; 294–324 ms in the worker of the hidden tab                                     |
+| Skylight per edit (main thread)                  | 0.05 ms avg / 0.3 ms max                                                                      |
+| Texture bake (18 layers)                         | 3.2–6.3 ms                                                                                    |
+| Initial JS (gzip)                                | 36.8 kB app + 9.9 kB sim + 2.8 kB mesher + 4.2 kB light workers + 158.8 kB three = **213 kB** |
+
+The spec estimated 20–60 ms [I] for the first skylight fill; the real figure is 85 ms in Node and
+three to four times that in a throttled background tab. It runs in a worker, so nothing blocks,
+but the world is unlit for that long after load (shadows appear a moment after the terrain).
+
+**Starting values I changed, and why**
+
+- Tone mapping: ACES Filmic. Neutral kept the sky too flat; AgX was never tried (the spec warns
+  it desaturates). Exposure 1.0.
+- Sky colours brighter than the previous flat `#9cc7ef` so the horizon survives the tone curve.
+- Tint strength lowered from 0.14 to 0.12: with textures the per-voxel hash was too noisy.
+- Ambient floor under full shadow is 6 %, so tunnels read as dark but not black.
+
+**Pending**
+
+- Water is rendered with the cube shader at 0.72 alpha, no waves or Fresnel, and the player walks
+  on the river bed: part B.
+- The mesher budget (< 5 ms) holds in Node but not in the throttled hidden tab; confirm in a
+  visible tab with `blockfront.pool.stats()` after a second `rebuildAll()`.
+- Clouds (optional in the spec) were skipped.
+
+**Adjustments after Jhon's first look (2026-10-08)**
+
+- Shadows were near black up close: the shade floor went from 6 % to 30 % of full light, and
+  the decor shader got a 15 % lift so grass and flowers read in the shade.
+- Water showed the block grid: the water layer skips the darkened texel border, uses only
+  low-frequency ripple noise, and the liquid material has no per-voxel tint and almost no AO
+  (opacity 0.62).
+- Underwater: when the eye is inside a water block the fog turns blue (`#1d4fb0`, 1–18 blocks)
+  and the HUD draws a blue tint with a vignette. Part B replaces this with the real water shader.
+- The world came up black after a reload once, and later looked uniformly dim on Jhon's
+  machine while it was lit in my tab: the skylight texture was reaching the GPU as zeros there.
+  Rather than update the `Data3DTexture` in place (`texSubImage3D`), `SkylightTexture` now
+  publishes a brand-new texture object on the first fill and after every edit (throttled to
+  120 ms, 1.5 MB upload each time) and the three voxel materials rebind their `skylight`
+  uniform. It also falls back to the main thread if the worker errors or takes more than 3 s,
+  and logs `skylight ready: <ms>, sample 15/15` on the console.
+- Brightness settled after two rounds: exposure 0.92, sun 0.95, sky ambient 0.6, ground
+  ambient 0.45, shade floor 30 %, AO 0.5 (the brighter values tried while the texture was
+  broken washed the scene out once the light worked); the texel seam between blocks went from
+  18 % to 9 % darker.
+
+## F2.5 part B — Water and swimming (2026-10-08) — done
+
+Spec: `docs/f2-5-polish.md` §2 (and the air of §3.2, which lives in the sim).
+
+**Done**
+
+- **Static water**: the generator's river is the only source; nothing flows. One-step fill in
+  the sim: a block broken at or below the sea level with water beside or above it turns into
+  water (`fillWithWater`, after shovel breaks and explosions), and the new water never triggers
+  further fills. Water is not solid: bullets and the DDA pass through it and blocks can replace
+  it.
+- **Swimming** (`physics/water.ts`, `player-controller.ts`): submerged ratio from the box's
+  centre column with the 8/9 surface, `inWater` above 10 %, `eyeInWater` from the eye voxel.
+  Drag `0.8^(dt·20)` scaled by `1 − (1 − ratio)²`, gravity 2.8 (a tenth of land), jump adds
+  lift while in water so holding it bobs at the surface, crouch sinks faster, 2.2 / 2.0 blocks/s
+  at the surface / submerged with no sprint, and a 6 blocks/s hop out when pushing against a
+  bank with the box free 0.6 higher. The shovel swings at half speed and the sniper cannot aim
+  in water.
+- **Air** (`physics/air.ts`): 15 s = 10 bubbles of 1.5 s, 1 s of grace at zero, then 10 HP/s as
+  `hit` / `death` events with the `drowning` source; refills in 2 s out of the water. The
+  snapshot carries `air`, `inWater` and `eyeInWater` for the HUD (part C draws the bubbles).
+- **Render**: the liquid pass now uses `water-material.ts`: two scrolling value-noise layers
+  bend the normal, Fresnel toward the sky colour, sun glint, skylight darkening, base `#3F76E4`,
+  alpha 0.66 (+0.2 at grazing angles), double sided, no depth write, drawn after the opaque
+  pass. Under water the fog is `#050533` mixed 45 % with the water colour, starts at 3 blocks
+  and clears to 20 over 2.5 s with an ease-in; the HUD keeps the blue tint and vignette.
+- Tests from the spec: submerged ratio (surface, fully under, chunk border), sinking without
+  input, rising and bobbing with jump, swim speed without sprint, climbing a one-block bank,
+  crouch sinking, eye detection at the 8/9 surface, air timing / grace / damage / refill, the
+  one-step fill, no fill above the sea level, drowning through `Game.step`. 143/143 in `sim`.
+
+**Pending**
+
+- The sand ford stays above the water, so you can still cross without swimming; that is by
+  design (the generator's ford), not a water bug.
+- No swim pose or splash sounds yet.
+
+## F2.5 part C — Minecraft-style HUD (2026-10-08) — done
+
+Spec: `docs/f2-5-polish.md` §3.
+
+**Done**
+
+- **Hotbar of five slots** in Counter-Strike order: 1 primary, 2 pistol (always present, §4.4
+  numbers: 30 / 80 / 20, 0.18 s, 12 / 48, 1.4 s reload, 100 % to 15 blocks → 70 % at 40), 3
+  shovel, 4 blocks, 5 grenade. Wheel cycles, `Q` returns to the previous slot, `G` throws a
+  grenade from any slot without switching (one per press). Square slots with pixel-art SVG icons,
+  a thick frame on the selected one, the count bottom-right (hidden when it is 1) and the item
+  name over the bar for 2 s with a fade in the last 0.5 s (ES · EN). Ammo stays bottom-right.
+- **Block colour**: one block slot with eight colours (`BUILD_COLORS`: both team blues and reds
+  plus yellow, green, cyan and violet from the ramp), team colour by default. `4` again on the
+  block slot or the wheel while holding `4` cycles; the middle click copies the aimed block's
+  colour. The sim validates the colour and places it; the hand cube and the slot icon follow.
+- **Hearts**: 10 hearts of 10 HP drawn as a 9×9 pixel-art SVG symbol (own design), half hearts
+  at 5 HP, value rounded up to a multiple of 5, shaking at ≤ 20 HP. On damage: white glow on the
+  bar for 1 s, the hearts just lost shown pale for 0.6 s, a red vignette, and a small camera roll
+  away from the attacker (`CameraEffects.hurtFrom`). No invulnerability frames. The HP number is
+  off by default (`hudState.showHpNumber`).
+- **Air bubbles**: 10 bubbles above the hearts, visible only with the eye under water or while
+  the air is not full; each lost bubble pops with a rising pitch; empty bubbles shake while
+  drowning. The air itself comes from the sim (part B).
+- Tests from the spec (`hotbar.test.ts`): slot order and tools, quick throw with `G` that keeps
+  the slot and does not repeat while held, colour selection restricted to the eight allowed, team
+  colour by default; pistol numbers in `weapon-state.test.ts` and `damage.test.ts`. 148/148.
+
+**Pending**
+
+- No sound asset for the bubble pop; the glass tick is reused with a rising rate.
+- The hotbar icons are flat SVGs, not renders of the 3D models.
+
+## F2.5 part D — ADS, sights and new weapons (2026-10-08) — done
+
+Spec: `docs/f2-5-polish.md` §4.
+
+**Done**
+
+- **ADS in the sim** (`combat/ads.ts`): per-weapon time and zoom from the table (rifle 260 ms
+  1.4×, carbine 220 ms 1.25×, SMG 170 ms 1.15×, shotgun 150 ms 1.1×, pistol 140 ms 1.15×, sniper
+  350 ms 4× with scope). The transition is a linear 0..1 held per player; the spread uses the ADS
+  minimum only from 90 % (no quickscope), movement is 75 % while aiming and 50 % with the scope,
+  the carbine walks at 95 % and the pistol at 100 %. Snapshots carry `ads`.
+- **New weapons** (`weapons.ts`, exact §4.4 numbers): carbine 28 / 70 / 20 at 0.12 s automatic,
+  30 / 90, 2.2 s, 100 % to 35 → 75 % at 70; pistol 30 / 80 / 20 at 0.18 s, 12 / 48, 1.4 s,
+  100 % to 15 → 70 % at 40. Cooldowns now carry their remainder across shots so the SMG fires
+  exactly 10/s and the carbine 4 shots in 0.36 s.
+- **Sights** (`weapon-models.ts`): procedural, one geometry group per gun with the sight centre
+  exactly on `SIGHT[weapon]`: peep ring and post with an emissive dot (rifle), red dot frame with
+  12 % glass and an emissive `#ff2a2a` dot (carbine), holographic hood with a 64² nearest
+  `CanvasTexture` reticle (SMG), bead (shotgun), two-post rear and front post (pistol), tube,
+  bells, mounts, turrets and blue-black lens (sniper).
+- **Viewmodel** gets its own camera: vertical FOV 70 (60 in ADS), near 0.01, aspect copied from
+  the world camera. ADS pose is `−sight + (0, 0, −0.3)` blended with smoothstep; bob drops to
+  15 % while aiming. World zoom by tangents (`fovAds = 2·atan(tan(fov/2)/zoom)`), mouse
+  sensitivity scaled by `tan(fovAds/2) / tan(fovHip/2)` (user adjust 1.0), crosshair fades with
+  `1 − t`.
+- **Hybrid scope**: from 80 % of the transition the view fades to black for 60 ms, the viewmodel
+  hides and a 2D overlay (circular black vignette + thin reticle + red dot) takes over. Lens
+  glint: an additive sprite at the eye of an enemy sniper who is scoped and pointing within 12°
+  of me, scaled by distance, at most one per 120 ms.
+- **Recoil per weapon** (`camera-effects.ts`, §4.5): vertical kick and ±horizontal random per
+  shot, split into a recovering part (damper, half-life 0.12 s, 0.08 s for the pistol) and a
+  permanent part written to the aim. Carbine: 0.5° for the first five shots, then 0.7° with a
+  sideways drift whose sign is random per burst (bursts reset after 0.3 s). Shotgun and sniper
+  have "—" in the table; they recover 50 % here so a single shot does not throw the aim off the
+  screen.
+- Tests from the spec: ADS table, progress in and out, the 90 % threshold, movement
+  multipliers; carbine and pistol numbers and cadence. 154/154 in `sim`.
+
+**Pending**
+
+- No weapon selection yet: the primary is the rifle until the F3 loadout menu; switch it with
+  `primary` in `matchConfig` to try the others.
+- The glint uses the muzzle flash sprite; a bluer texture would read better.
+
+## F2.5 part E — First person and shot feedback (2026-10-08) — F2.5 closed
+
+Spec: `docs/f2-5-polish.md` §5 and §6.
+
+**Done — §5 first person**
+
+- `packages/sim/src/physics/spring.ts`: damper, exact critically damped spring and an exact
+  underdamped spring (Holden), with tests for step-size independence, no overshoot and the
+  single bounce at ζ 0.5 / ω 25.
+- `first-person.ts` (`WeaponMotion`): recoil impulses per shot on four underdamped springs
+  (back 0.03–0.08, pitch 3–8°, yaw ±1°, roll ±2°, counter-push on long bursts), mouse sway
+  (0.02°/px clamped ±4°, half-life 0.07 s, 0.015 of shift, 30 % in ADS), Lissajous 1:2 bob (A
+  0.012, B 0.008, roll 1.5°, 1.9 steps/s walking and 2.6 sprinting, ×1.8 sprint, ×0.15 in ADS,
+  proportional to speed), sprint pose (yaw 30°, roll −12°, drop 0.05), lateral lean (−0.8°/m/s,
+  max 3.5°), landing impulse from the fall speed.
+- Reload timeline from the sim's `reloading` flag and the weapon's reload time: 0–0.2 lower and
+  roll 25°, 0.2–0.45 the `magazine` part falls, 0.45–0.7 the new one rises, 0.7–0.8 slap
+  impulse, 0.8–1 back; bolt pull at 0.85–0.95 when the magazine was empty; shotgun tilts and
+  pushes once per shell. Weapon switch: holster 0.2 s (down 0.3, pitch −40°), draw 0.45 s with
+  easeOutBack. Shovel swing with the Minecraft curve `f = sin(√p·π)` over 350 ms, hit stop of
+  45 ms and a 0.5° camera jolt when the hit lands; block placing is the same swing at 60 % in
+  200 ms. The shovel was remodelled (wooden handle, steel neck, bevelled blade).
+- Block arms: sleeve 0.10×0.10×0.45 with a team-coloured cuff and a 0.10³ skin hand, shoulders
+  fixed in camera space at (±0.28, −0.38, +0.05), hands riding on each gun's grip and fore grip
+  (`GRIPS`), the box arm placed and scaled with a two-point IK (`BlockArm.aim`), so the arms
+  follow recoil, reload and ADS for free. Pistol: both arms converge in a V; shovel and blocks:
+  right arm only, Minecraft pose (block low right, turned 45°).
+- Sim: the shovel hit lands 0.14 s into a 0.35 s swing (the PLAN table said 0.25 s per swing;
+  the polish doc wins), guns cannot fire for 0.15 s after sprinting and a held trigger counts as
+  a press once ready, `blockDamaged` events carry the face normal.
+
+**Done — §6 feedback**
+
+- Cracks: ten crack stages baked as extra layers of the block array texture and drawn as an
+  instanced shell over damaged blocks (GLSL3 shader, stage from the HP). Cleared when the block
+  changes.
+- Impact marks: ring buffer of 256 instanced 0.12 quads with polygon offset (−1, −4), one draw
+  call, hidden when their block changes. The sim sends the face, not the exact point, so the mark
+  lands somewhere on that face.
+- Tracers: additive stretched boxes (2.5 m, 80 ms, 60 m/s) on every shot, one in three for the
+  automatics. Shell casings: 48 instanced brass boxes ejected right (1.5–2.5 m/s) and up
+  (1–2 m/s), stopped by the voxel floor only, gone after 1.3 s. Muzzle light: one permanent
+  `PointLight` in the world and one in the viewmodel scene whose intensity flashes and decays
+  (lights are never added or removed, so no shader recompiles). The voxel shader lights itself,
+  so the world light only reaches players and props.
+- Sound by distance: positional shots get a low-pass from 20 kHz near to 1.5 kHz past 100
+  blocks and arrive late at 343 m/s; panning is the panner's equal-power default. No far "tail"
+  samples exist yet, so there is no near/far crossfade.
+- Tests: springs (4), swing timing and face normals (2), sprint readiness (1). 161/161 in `sim`.
+
+**Measured**
+
+| Metric            | Value                                                                                          |
+| ----------------- | ---------------------------------------------------------------------------------------------- |
+| Initial JS (gzip) | 48.3 kB app + 11.7 kB sim + 2.7 kB mesher + 4.2 kB light workers + 159.4 kB three = **226 kB** |
+| `sim` tests       | 161 in 20 files                                                                                |
+
+**Pending**
+
+- The right arm is hidden behind the block cube in the block pose; a better grip point is a
+  matter of taste in a visible tab.
+- Scoped sensitivity and ADS poses need a feel pass in a visible tab (constants in
+  `viewmodel.ts`, `first-person.ts` and `camera-effects.ts`).
+- The bubble pop, splash and swim sounds are still missing.
+
+## F2.6 part A — Hip vs ADS, fall damage, sneaking and the charged grenade (2026-10-09) — done
+
+Spec: `docs/f2-6-feel.md` §2, §4 and §5. Tests written from those sections first.
+
+**Done — §2 hip against sights**
+
+- `combat/spread.ts` holds the new table (hip base / max / per shot, ADS base / max / per
+  shot, recoil factor in ADS, zoom, ADS time, movement) and replaces the spread fields of
+  `weapons.ts` and the F2.5 table of `ads.ts`, which now reads times, zoom and movement from it.
+- `computeSpread` applies the modifiers: moving ×1.5 hip / ×1.25 ADS (+1.5° for the sniper),
+  airborne +3° / +1.5°, crouched ×0.8, bloom in shots with a linear recovery of 6–10 °/s, and
+  the interpolation from hip to ADS during the transition that only snaps to the ADS value from
+  90 % (no quickscope). The sim evaluates it per shot from the shooter's real state (speed,
+  ground, water, crouch) and the snapshot `spread` drives the crosshair.
+- Shot distribution: `scatterRadius(u, blend)` is uniform over the disk from the hip (`√u`,
+  mean radius 2/3) and centred in ADS (`u`, mean 1/2), interpolated by the same blend. A
+  20 000-sample test with a fixed seed checks both means.
+- Client: zoom and FOV from the table with easeOutCubic, recoil scaled by the ADS factor, bob
+  at 20 % and sway at 30 % in ADS, a `radial-gradient` vignette from 0 to 0.3 with the
+  transition, a 70 ms rustle when entering and leaving ADS, and for the scoped sniper a
+  Lissajous sway of ±0.3° written into the aim with `Shift` holding the breath (steady 3 s, then
+  double shake for 2 s).
+
+**Done — §5 fall damage**
+
+- `physics/fall.ts`: `5 × floor(fall − 3)` HP (4 blocks = 5, 7 = 20, 10 = 35, 15 = 60, death
+  from ~23). The controller tracks the peak height from the moment the feet leave the ground
+  and reports `landedFrom` on the landing tick; touching water resets the peak. Landings above
+  4 blocks halve the horizontal speed.
+- `Game` emits `landed` (height ≥ 1) and applies the damage as a `hit` / `death` with the `fall`
+  source; if an enemy hurt the player in the last 5 s the fall is credited to them (kill feed
+  "X [Caída] Y").
+- Sneaking: while crouched and on the ground each horizontal axis is trimmed in 0.05 steps
+  until the box, lowered by half a block, still rests on something, so the box can hang over an
+  edge but never leaves the block (Minecraft rule). Not crouching walks off as before.
+- Client: camera dip and tilt scaled by the height, thud from 4 blocks and crunch from 8, also
+  positional for others.
+
+**Done — §4 charged grenade**
+
+- Press: fuse starts (3 s, a tick every 0.5 s rising in pitch) and the power charges for
+  0.8 s with the bow curve `p = (f² + 2f) / 3`, `v = lerp(9, 24, p)`; after that it only cooks
+  and explodes in hand at 3 s as before. Release: `dir · v + player velocity` with +8° of pitch;
+  right click while holding lobs it underhand at 7 m/s. `G` throws at the speed of a 0.4 s
+  charge (about the old 16 m/s). The snapshot carries `charge`.
+- Predicted arc (`grenade-arc.ts`): `predictArc` runs the sim's own `stepGrenade` at the fixed
+  tick (up to the fuse or 180 steps) and the client draws it as 40 fading dots plus a ring of
+  the damage radius at the end, white on the ground and red if it would go off in the air;
+  cooking shortens it on its own. Only the thrower sees it.
+- Tests: power at 0, 0.4 and 0.8 s and beyond, velocity inheritance and the 8° tilt, the
+  underhand speed, the arc equal to the stepped trajectory point by point, air vs ground.
+
+**Measured**
+
+| Metric      | Value                                                                        |
+| ----------- | ---------------------------------------------------------------------------- |
+| `sim` tests | 186 in 23 files                                                              |
+| Audio       | 27 clips, 113 KB (five new synthesized: aim in/out, thud, crunch, fuse tick) |
+
+**Pending**
+
+- The sniper breath has no sound and no HUD cue.
+- The sneaking test for "stepping down half a block" cannot exist on a whole-block grid; the
+  rule allows drops up to 0.5 and refuses a drop of 1.
+- No grenade power bar on the HUD: the arc is the gauge.
+
+## F2.6 part B — Minecraft-style hand items and real gun audio (2026-10-09) — done
+
+Spec: `docs/f2-6-feel.md` §1 and §3. Plus the playtest fixes at the top of the day.
+
+**Playtest fixes (before part B)**
+
+- Hip spread toned down about 35 % against the §2 table (rifle 1.6°, carbine 1.4°, SMG 0.9°,
+  pistol 0.8°, shotgun 4.5°, sniper 4°), moving ×1.3 instead of ×1.5 and +2° in the air
+  instead of +3°. ADS values untouched. Spread tests updated to the new numbers.
+- Knockback: every hit shoves the victim along the shot (1.5 to 6 m/s by damage, 1.2 m/s up)
+  and blasts push radially up to 9 m/s, so shots can throw people off ledges (test added).
+- `P` cycles the primary weapon (rifle → carbine → SMG → shotgun → sniper) through a new
+  `primary` field of the input, until the F3 loadout menu.
+
+**§1 Hand-held sprites**
+
+- `sprite-geometry.ts`: pure extrusion of a 16×16 sprite into a front, a back and 1-texel side
+  faces only where an opaque pixel touches a transparent one, 1/16 thick, with darkened vertex
+  colours on the sides. Tests (client vitest, node): one pixel → 4 sides, a 3-px line → 8, a full
+  sprite → 64, no faces between neighbours, darkened colours, and the art rules.
+- `SpriteItem`: `CanvasTexture` with nearest filter and alpha test for the faces, the extruded
+  sides as a `BufferGeometry`. The shovel and the grenade are drawn in code as 16-row strings
+  (`SHOVEL_ART`, `GRENADE_ART`): diagonal wooden handle with a knob, 1-px neck, teardrop blade
+  with outline and highlight; a dark green grenade with a steel spoon and pin.
+- Held with Minecraft's `handheld.json` first-person transform (rotation [0, −90, 25], translation
+  [1.13, 3.2, 1.13] px, scale 0.68) at the hand anchor (+0.56, −0.52, −0.72), no arms. Swing with
+  Minecraft's renderer values (rotY 45 + sin(√s·π)·−20, rotZ sin(√s·π)·−20, rotX sin(s·π)·−80);
+  the equip dip reuses the holster/draw animation. Guns keep their 3D models (decision E3).
+
+**§3 Real gun audio**
+
+- `scripts/audio/build.mjs` + `sources.mjs`: downloads only the listed files from the GitHub
+  mirror of the Free Firearm Sound Library (CC0) and the four CC0 Freesound previews, decodes to
+  48 kHz mono with a 35 Hz high-pass, finds each shot's transient, cuts the takes with 2 ms of
+  pre-roll, splits body (250 ms) and tail (0.2–1.5 s), normalises to −1 dBFS and encodes Opus in
+  WebM (96 kbps own bodies, 64 the rest) plus AAC M4A. Output: 77 clips, **387 KB Opus / 512 KB
+  AAC**, the client downloads one format; manifest in `gun-manifest.json`.
+- `GunAudio` (Web Audio, replaces `PositionalAudio` for the guns): one `AudioBufferSourceNode`
+  per shot, a `PannerNode` + low-pass per entity (HRTF for the four nearest, equal-power for the
+  rest), voice limits 8 own / 3 per enemy / 40 global stealing the quietest, −60 dB cut-off, no
+  same clip twice within 25 ms on an entity; buses own / enemies / impacts / world / UI at −6 dB,
+  master compressor (−12 dB, 4:1, 3 ms, 150 ms) then limiter (−1 dB, 20:1); ducking of enemies
+  and world by 3.5 dB on own shots (5 ms in, ~200 ms out); one shared `ConvolverNode` with the
+  garage impulse (0.8 s, 15 ms pre-delay) fed by per-bus sends scaled by the listener's
+  enclosure (12 short DDA rays, re-evaluated every 250 ms); round-robin takes without repeats,
+  pitch ±3–4 %, volume ±1.2 dB; one tail per weapon and entity, the previous fading in 30 ms.
+- Own shot = behind-the-shooter body + synthetic 55–60 Hz thump + tail, staggered 4–8 ms.
+  Enemy shot = near / mid / far body by distance + tail, low-passed and delayed by distance.
+  Pump 300 ms after a shotgun shot and bolt 600 ms after a sniper shot; slide/clip clips on
+  reload. Hitmarker is a 3 kHz click, headshot adds a 4.2 kHz one. Enemy bullets passing within
+  2 blocks of the eye play the flyby. Casings land with the Freesound clip 0.35–0.6 s later.
+  Grenade blast uses the unfa recording plus a 45 Hz thump. The old synthesized shot, reload and
+  explosion clips were removed.
+
+**Measured**
+
+| Metric                 | Value                                                  |
+| ---------------------- | ------------------------------------------------------ |
+| Audio on disk          | guns 387 KB (webm) + 512 KB (m4a) + 113 KB other clips |
+| Downloaded by a client | about 500 KB (one gun format + the small clips)        |
+| Tests                  | 187 in `sim`, 7 in the client                          |
+
+**Pending / to tune by ear**
+
+- Mix levels of the layers, the thump and the ducking amount (constants in `gun-audio.ts`).
+- The sprite shovel size and anchor; the arm was removed on purpose for sprite items.
+- The enemy "far" layer exists only for the carbine and the sniper; the other guns fall back to
+  the mid take beyond 60 blocks.
+
+**Follow-up after the second playtest (2026-10-09)**
+
+- Levels: gun master at −7 dB, Three audio master at 0.6, own footsteps at 0.08 (were 0.3) every
+  2.8 blocks (were 2.1), others' at 0.35.
+- The `P` key is gone. The unlocked overlay now has a loadout panel with the five primaries
+  (one at a time); the choice applies immediately for now.
+- **Agreed for F3 (bots and maps)**: a suicide key that must be held to confirm, and the
+  primary can only be changed after dying (the panel stays open on the death screen and the new
+  weapon arrives with the respawn).
+- Reload feedback (2026-10-14): the crosshair is replaced by a 22 px ring that fills clockwise
+  with the reload, a spinning reload glyph and the seconds left inside. The sim now reports
+  `reloadLeft` / `reloadTotal` for the gun in hand (`reloadRemaining` counts every shotgun shell
+  still to load). The ammo box label pulses instead of sitting muted. 4 new sim tests (191).
+- Grenade and stock (2026-10-14): damage 150 at the centre fading to 0 at 4.5 blocks (lethal
+  inside 1.5, 50 at 3); cooking through the fuse kills the holder; the viewmodel winds the
+  grenade back and up with the charge. Slots 4 and 5 lock at zero stock (crossed out in the
+  hotbar, wheel skips them) and the sim hands back to the primary; weapons never lock. Trigger on
+  an empty magazine emits `dryfire`: synthesized hammer click, counter flashes red, and with no
+  reserve left the ammo box says so. 5 new sim tests (196).
+- Explosion visuals (2026-10-14): `ExplosionFx` draws a white flash that balloons for 160 ms,
+  14 additive fire puffs that fly out and cool from yellow to red over ~0.5 s, 9 smoke puffs that
+  rise for ~1.4 s, and an orange point light (90, decay 11/s). Within 12 blocks the HUD adds a
+  short warm screen flash scaled by distance. Textures are canvas gradients, no assets.
+- Language (2026-10-14): one language at a time. `lib/i18n/strings.ts` holds the `en` and `es`
+  dictionaries and `detectLocale` (first browser language with a dictionary, English otherwise);
+  `locale.svelte.ts` keeps the current locale as reactive state and exposes `t()`, so the start
+  panel's selector can switch it live later. The renderer now emits item keys and the HUD
+  translates them. 4 client tests (11).

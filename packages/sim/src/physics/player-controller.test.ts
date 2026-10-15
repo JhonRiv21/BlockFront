@@ -101,3 +101,18 @@ describe('stepPlayer', () => {
     expect(player.pos[2]).toBeLessThan(-2)
   })
 })
+
+describe('stepPlayer never ends inside a block', () => {
+  it('jumping diagonally onto the corner of a one-block step', () => {
+    const step: Solid = (x, y, z) => y < 0 || (x >= 3 && z <= -3 && y < 1)
+    const player = createPlayer([2.6, 0, -2.4])
+    for (let i = 0; i < 90; i++) {
+      stepPlayer(player, { ...idle, forward: 1, strafe: 1, jump: i % 20 === 0 }, step, TICK_SECONDS)
+      const box = playerAabb(player)
+      for (let x = Math.floor(box.min[0]); x < Math.ceil(box.max[0]); x++)
+        for (let y = Math.floor(box.min[1]); y < Math.ceil(box.max[1]); y++)
+          for (let z = Math.floor(box.min[2]); z < Math.ceil(box.max[2]); z++)
+            expect(step(x, y, z)).toBe(false)
+    }
+  })
+})

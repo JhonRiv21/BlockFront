@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { WORLD_SIZE } from '../config.ts'
-import { BLOCK, mirrorBlock } from './palette.ts'
+import { BLOCK, mirrorBlock } from './blocks.ts'
 import { generateWorld } from './generator.ts'
 
 // Written from the spec: same seed -> same map, mirror symmetry over Z with team colors swapped,
@@ -13,13 +13,19 @@ function sampleBlocks(seed: number): Uint8Array {
   return out
 }
 
+function firstDifference(a: Uint8Array, b: Uint8Array): number {
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return i
+  return -1
+}
+
 describe('generateWorld', () => {
   it('is deterministic for a seed and differs between seeds', () => {
     const a = sampleBlocks(1234)
     const b = sampleBlocks(1234)
     const c = sampleBlocks(99)
-    expect(a).toEqual(b)
-    expect(a).not.toEqual(c)
+    // Plain loops: toEqual on 1.5 M entries takes seconds.
+    expect(firstDifference(a, b)).toBe(-1)
+    expect(firstDifference(a, c)).not.toBe(-1)
   })
 
   it('is mirrored over Z with the team colors swapped', () => {

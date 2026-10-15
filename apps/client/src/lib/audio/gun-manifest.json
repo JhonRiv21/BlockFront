@@ -1,0 +1,62 @@
+{
+  "weapons": {
+    "rifle": {
+      "own": ["rifle-own-0", "rifle-own-1", "rifle-own-2"],
+      "near": ["rifle-near-0", "rifle-near-1", "rifle-near-2"],
+      "mid": ["rifle-mid-0", "rifle-mid-1", "rifle-mid-2"],
+      "far": [],
+      "tail": ["rifle-tail-0", "rifle-tail-1"],
+      "mech": ["rifle-mech"]
+    },
+    "carbine": {
+      "own": ["carbine-own-0", "carbine-own-1", "carbine-own-2"],
+      "near": ["carbine-near-0", "carbine-near-1"],
+      "mid": ["carbine-mid-0", "carbine-mid-1", "carbine-mid-2"],
+      "far": ["carbine-far-0", "carbine-far-1"],
+      "tail": ["carbine-tail-0", "carbine-tail-1"],
+      "mech": ["carbine-mech"]
+    },
+    "smg": {
+      "own": ["smg-own-0", "smg-own-1", "smg-own-2"],
+      "near": ["smg-near-0", "smg-near-1", "smg-near-2"],
+      "mid": ["smg-mid-0", "smg-mid-1", "smg-mid-2"],
+      "far": [],
+      "tail": ["smg-tail-0", "smg-tail-1"],
+      "mech": ["smg-mech"]
+    },
+    "shotgun": {
+      "own": ["shotgun-own-0", "shotgun-own-1"],
+      "near": ["shotgun-near-0", "shotgun-near-1"],
+      "mid": ["shotgun-mid-0", "shotgun-mid-1", "shotgun-mid-2"],
+      "far": [],
+      "tail": ["shotgun-tail-0", "shotgun-tail-1"],
+      "mech": ["shotgun-mech"]
+    },
+    "sniper": {
+      "own": ["sniper-own-0", "sniper-own-1", "sniper-own-2"],
+      "near": ["sniper-near-0", "sniper-near-1"],
+      "mid": ["sniper-mid-0", "sniper-mid-1", "sniper-mid-2"],
+      "far": ["sniper-far-0", "sniper-far-1", "sniper-far-2"],
+      "tail": ["sniper-tail-0", "sniper-tail-1"],
+      "mech": ["sniper-mech"]
+    },
+    "pistol": {
+      "own": ["pistol-own-0", "pistol-own-1", "pistol-own-2"],
+      "near": ["pistol-near-0", "pistol-near-1"],
+      "mid": ["pistol-mid-0", "pistol-mid-1"],
+      "far": [],
+      "tail": ["pistol-tail-0", "pistol-tail-1"],
+      "mech": ["pistol-mech"]
+    }
+  },
+  "extras": {
+    "grenade-blast": ["grenade-blast"],
+    "bullet-whiz": ["bullet-whiz"],
+    "casing": ["casing-0", "casing-1", "casing-2"],
+    "ir-garage": ["ir-garage"]
+  },
+  "bytes": {
+    "webm": 396466,
+    "m4a": 524250
+  }
+}

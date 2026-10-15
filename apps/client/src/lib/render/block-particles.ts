@@ -1,4 +1,4 @@
-import { PALETTE } from '@blockfront/sim/world/palette'
+import { PALETTE } from '@blockfront/sim/world/blocks'
 import {
   BoxGeometry,
   Color,
@@ -31,6 +31,7 @@ interface Particle {
 // Small cubes thrown out of a block when it is hit or broken, coloured from the palette.
 export class BlockParticles {
   private readonly mesh: InstancedMesh
+  readonly material: MeshLambertMaterial
   private readonly particles: Particle[] = []
   private readonly matrix = new Matrix4()
   private readonly position = new Vector3()
@@ -38,11 +39,8 @@ export class BlockParticles {
   private readonly scale = new Vector3()
 
   constructor(private readonly scene: Scene) {
-    this.mesh = new InstancedMesh(
-      new BoxGeometry(1, 1, 1),
-      new MeshLambertMaterial({ color: '#ffffff' }),
-      MAX_PARTICLES,
-    )
+    this.material = new MeshLambertMaterial({ color: '#ffffff' })
+    this.mesh = new InstancedMesh(new BoxGeometry(1, 1, 1), this.material, MAX_PARTICLES)
     this.mesh.instanceMatrix.setUsage(DynamicDrawUsage)
     this.mesh.count = 0
     this.mesh.frustumCulled = false
@@ -103,6 +101,6 @@ export class BlockParticles {
   dispose(): void {
     this.scene.remove(this.mesh)
     this.mesh.geometry.dispose()
-    ;(this.mesh.material as MeshLambertMaterial).dispose()
+    this.material.dispose()
   }
 }

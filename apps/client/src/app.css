@@ -4,6 +4,8 @@
   --color-hud: oklch(0.97 0.01 250);
   --color-hud-muted: oklch(0.8 0.02 250);
   --color-hud-ink: oklch(0.2 0.02 260);
+  --color-water-tint: oklch(0.45 0.16 262 / 0.35);
+  --color-health-heart: oklch(0.62 0.22 25);
   --color-hud-panel: oklch(0.18 0.02 260 / 0.55);
   --color-team-blue: oklch(0.64 0.17 255);
   --color-team-red: oklch(0.63 0.2 25);
@@ -22,4 +24,36 @@ body {
   overflow: hidden;
   background: #0b1020;
   user-select: none;
+}
+
+@keyframes hud-shake {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(1px, -1px);
+  }
+  50% {
+    transform: translate(-1px, 1px);
+  }
+  75% {
+    transform: translate(1px, 1px);
+  }
+}
+
+.animate-shake {
+  animation: hud-shake 0.18s infinite;
+}
+
+@keyframes reload-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-reload-spin {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: reload-spin 1s linear infinite;
 }

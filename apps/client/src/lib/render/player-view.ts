@@ -21,6 +21,7 @@ import {
   type Scene,
 } from 'three'
 import type { AssetStore } from '../assets/asset-store.ts'
+import { useSphericalFog } from './spherical-fog.ts'
 import { buildWeapon } from './weapon-models.ts'
 
 const TEAM_TINT: Record<Team, string> = { blue: '#9db9ff', red: '#ff9a8c' }
@@ -56,9 +57,11 @@ export class PlayerView {
     private readonly team: Team,
     private readonly assets: AssetStore,
   ) {
+    const placeholderMaterial = new MeshLambertMaterial({ color: TEAM_COLOR[team] })
+    useSphericalFog(placeholderMaterial)
     this.placeholder = new Mesh(
       new BoxGeometry(PLAYER.width, PLAYER.height, PLAYER.width),
-      new MeshLambertMaterial({ color: TEAM_COLOR[team] }),
+      placeholderMaterial,
     )
     this.placeholder.position.y = PLAYER.height / 2
     // Health bar: camera-facing sprites, the fill anchored on its left edge so it shrinks inward.
@@ -142,6 +145,7 @@ export class PlayerView {
       if (child instanceof Mesh) {
         const material = (child.material as MeshBasicMaterial).clone()
         material.color.multiply(tint)
+        useSphericalFog(material)
         child.material = material
       }
     })
@@ -183,6 +187,9 @@ export class PlayerView {
     this.heldWeapon = weapon
     if (!weapon) return
     const held = buildWeapon(weapon)
+    held.traverse((child) => {
+      if (child instanceof Mesh) useSphericalFog(child.material as MeshLambertMaterial)
+    })
     // The guns point down -Z; the character faces +Z.
     held.rotation.y = Math.PI
     held.scale.setScalar(1.3)

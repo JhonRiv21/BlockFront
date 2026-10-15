@@ -29,20 +29,37 @@ class HudState {
   mode = $state<CameraMode>('fps')
   showHitboxes = $state(false)
   assetsReady = $state(false)
+  underwater = $state(false)
 
   hp = $state(100)
+  // Hearts the player had before the last hit, shown pale for a moment.
+  hpBefore = $state(100)
+  hurtAt = $state(0)
   alive = $state(true)
   respawnIn = $state(0)
+  air = $state(10)
+  eyeInWater = $state(false)
   slot = $state(1)
   weapon = $state<WeaponId>('rifle')
   mag = $state(0)
   reserve = $state(0)
   reloading = $state(false)
+  pistolMag = $state(12)
+  pistolReserve = $state(48)
+  pistolReloading = $state(false)
+  // Reload of the gun in hand: seconds left and total, for the ring in the crosshair.
+  reloadLeft = $state(0)
+  reloadTotal = $state(0)
   blocks = $state(50)
+  blockColor = $state(11)
   grenades = $state(3)
   cooking = $state(-1)
   // Cone half-angle in radians; drives the crosshair gap.
   spread = $state(0)
+  // ADS transition 0..1; the crosshair fades with it. scoped shows the scope overlay.
+  ads = $state(0)
+  scoped = $state(false)
+  scopeFade = $state(0)
   hitmarker = $state(false)
   hitmarkerHead = $state(false)
   killFeed = $state<KillFeedEntry[]>([])
@@ -51,6 +68,19 @@ class HudState {
   yaw = $state(0)
   scoreBlue = $state(0)
   scoreRed = $state(0)
+  // Key of the item just selected (rifle, pistol, shovel, blocks, grenade...), shown over the
+  // hotbar for 2 s.
+  itemName = $state('')
+  itemNameAt = $state(0)
+  // Last trigger pull on an empty magazine; the ammo counter flashes red.
+  dryFireAt = $state(-1e9)
+  // Nearby explosion: screen flash strength 0..1 and when it happened.
+  blastAt = $state(-1e9)
+  blastStrength = $state(0)
+  now = $state(0)
+  showHpNumber = $state(false)
+  // Set by the mount: asks the game for a different primary weapon.
+  selectPrimary: (weapon: WeaponId) => void = () => {}
 }
 
 export const hudState = new HudState()

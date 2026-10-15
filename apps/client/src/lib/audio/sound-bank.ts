@@ -1,4 +1,4 @@
-import { Audio, AudioListener, Object3D, PositionalAudio, type Scene } from 'three'
+import { Audio, AudioListener, Object3D, PositionalAudio, Vector3, type Scene } from 'three'
 import type { AssetStore } from '../assets/asset-store.ts'
 import type { SoundName } from '../assets/manifest.ts'
 
@@ -15,12 +15,15 @@ const MAX_VOICES = 24
 export class SoundBank {
   readonly listener = new AudioListener()
   private readonly voices = new Set<Object3D>()
+  private readonly listenerPosition = new Vector3()
   private muted = false
 
   constructor(
     private readonly scene: Scene,
     private readonly assets: AssetStore,
-  ) {}
+  ) {
+    this.listener.setMasterVolume(0.6)
+  }
 
   resume(): void {
     const context = this.listener.context
@@ -29,7 +32,7 @@ export class SoundBank {
 
   setMuted(muted: boolean): void {
     this.muted = muted
-    this.listener.setMasterVolume(muted ? 0 : 1)
+    this.listener.setMasterVolume(muted ? 0 : 0.6)
   }
 
   play(name: SoundName, options: PlayOptions = {}): void {
@@ -54,9 +57,19 @@ export class SoundBank {
     sound.setRefDistance(options.refDistance ?? 6)
     sound.setRolloffFactor(1.5)
     sound.setDistanceModel('inverse')
+    // docs §6.6: distant sounds lose their highs (20 kHz near → 1.5 kHz past 100 blocks) and
+    // arrive late at the speed of sound; the panner already uses equal-power panning.
+    const distance = this.listener
+      .getWorldPosition(this.listenerPosition)
+      .distanceTo(anchor.position)
+    const filter = this.listener.context.createBiquadFilter()
+    filter.type = 'lowpass'
+    const t = Math.min(1, distance / 100)
+    filter.frequency.value = 20000 * Math.pow(1500 / 20000, t)
+    sound.setFilter(filter)
     anchor.add(sound)
     this.scene.add(anchor)
-    this.start(sound, anchor)
+    this.start(sound, anchor, distance / 343)
   }
 
   // Picks one of the numbered variants so repeated sounds do not sound identical.
@@ -82,7 +95,7 @@ export class SoundBank {
     this.voices.clear()
   }
 
-  private start(sound: Audio | PositionalAudio, anchor: Object3D | null): void {
+  private start(sound: Audio | PositionalAudio, anchor: Object3D | null, delay = 0): void {
     if (anchor) this.voices.add(anchor)
     sound.onEnded = () => {
       sound.disconnect()
@@ -91,6 +104,6 @@ export class SoundBank {
         this.voices.delete(anchor)
       }
     }
-    sound.play()
+    sound.play(delay)
   }
 }

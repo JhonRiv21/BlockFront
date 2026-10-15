@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { TICK_SECONDS } from '../config.ts'
 import { WEAPONS } from './weapons.ts'
-import { createWeaponState, stepWeapon, type WeaponInput } from './weapon-state.ts'
+import { createWeaponState, reloadRemaining, stepWeapon, type WeaponInput } from './weapon-state.ts'
 
 // Written from PLAN.md §3: fire interval, magazine / reserve and reload per weapon; the shotgun
 // reloads one shell at a time and firing interrupts that reload.
@@ -174,5 +174,81 @@ describe('shotgun reloads shell by shell', () => {
     for (let t = 0; t < 5; t++) stepWeapon(state, TICK_SECONDS, idle)
     expect(stepWeapon(state, TICK_SECONDS, tap)).toBeNull()
     expect(state.reloading).toBe(true)
+  })
+})
+
+// docs/f2-5-polish.md §4.4: the pistol is always present as the secondary.
+describe('pistol', () => {
+  it('starts with 12 / 48, fires at most every 0.18 s and reloads in 1.4 s', () => {
+    const state = createWeaponState('pistol')
+    expect(state.mag).toBe(12)
+    expect(state.reserve).toBe(48)
+    expect(WEAPONS.pistol.fireInterval).toBeCloseTo(0.18, 9)
+    expect(WEAPONS.pistol.reloadSeconds).toBeCloseTo(1.4, 9)
+    expect(WEAPONS.pistol.automatic).toBe(false)
+  })
+})
+
+// docs/f2-5-polish.md §4.4: the automatic carbine.
+describe('carbine', () => {
+  it('30 / 90, 0.12 s automatic, reload 2.2 s', () => {
+    const state = createWeaponState('carbine')
+    expect(state.mag).toBe(30)
+    expect(state.reserve).toBe(90)
+    expect(WEAPONS.carbine.fireInterval).toBeCloseTo(0.12, 9)
+    expect(WEAPONS.carbine.reloadSeconds).toBeCloseTo(2.2, 9)
+    expect(WEAPONS.carbine.automatic).toBe(true)
+    let fired = 0
+    for (let i = 0; i <= ticks(0.36); i++)
+      if (stepWeapon(state, TICK_SECONDS, hold) === 'fired') fired++
+    expect(fired).toBe(4)
+  })
+})
+
+// Spec for the reload ring in the HUD: the sim reports how many seconds the reload in progress
+// still needs and how long it took in total, so progress = 1 - remaining / total. A shotgun
+// reload counts every shell that still fits. The implementation was in context when these
+// were written; the expectations come from the weapon table, not from the code.
+describe('reload remaining and total', () => {
+  it('rifle: 1.8 s at the start, counting down to 0 when the magazine is full again', () => {
+    const state = createWeaponState('rifle')
+    stepWeapon(state, TICK_SECONDS, tap)
+    stepWeapon(state, TICK_SECONDS, { ...idle, reload: true })
+    // The reload begins at the end of the tick that asked for it.
+    expect(reloadRemaining(state)).toBeCloseTo(1.8, 5)
+    expect(state.reloadTotal).toBeCloseTo(1.8, 5)
+    for (let i = 0; i < ticks(1.0); i++) stepWeapon(state, TICK_SECONDS, idle)
+    expect(reloadRemaining(state)).toBeCloseTo(0.8, 5)
+    for (let i = 0; i < ticks(0.9); i++) stepWeapon(state, TICK_SECONDS, idle)
+    expect(state.reloading).toBe(false)
+    expect(reloadRemaining(state)).toBe(0)
+    expect(state.mag).toBe(WEAPONS.rifle.magazine)
+  })
+
+  it('shotgun with two shells missing: the total is two shells, 1.0 s', () => {
+    const state = createWeaponState('shotgun')
+    stepWeapon(state, TICK_SECONDS, tap)
+    for (let i = 0; i < ticks(1.2); i++) stepWeapon(state, TICK_SECONDS, idle)
+    stepWeapon(state, TICK_SECONDS, tap)
+    stepWeapon(state, TICK_SECONDS, { ...idle, reload: true })
+    expect(state.reloadTotal).toBeCloseTo(1.0, 5)
+    expect(reloadRemaining(state)).toBeCloseTo(1.0, 5)
+    // After the first shell goes in, only the second one is left.
+    for (let i = 0; i < ticks(0.5); i++) stepWeapon(state, TICK_SECONDS, idle)
+    expect(state.mag).toBe(WEAPONS.shotgun.magazine - 1)
+    expect(reloadRemaining(state)).toBeLessThanOrEqual(0.5)
+    expect(reloadRemaining(state)).toBeGreaterThan(0.4)
+  })
+
+  it('shotgun total is capped by the reserve', () => {
+    const state = createWeaponState('shotgun')
+    state.mag = 0
+    state.reserve = 2
+    stepWeapon(state, TICK_SECONDS, idle)
+    expect(state.reloadTotal).toBeCloseTo(1.0, 5)
+  })
+
+  it('not reloading reports 0', () => {
+    expect(reloadRemaining(createWeaponState('smg'))).toBe(0)
   })
 })

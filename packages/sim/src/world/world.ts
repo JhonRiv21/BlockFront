@@ -1,6 +1,6 @@
 import { CHUNK_SIZE, WORLD_SIZE } from '../config.ts'
 import { Chunk, CHUNK_MASK, CHUNK_SHIFT } from './chunk.ts'
-import { BLOCK, type BlockId } from './palette.ts'
+import { BLOCK, type BlockId } from './blocks.ts'
 
 export interface ChunkCoord {
   cx: number

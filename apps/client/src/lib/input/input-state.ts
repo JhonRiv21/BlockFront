@@ -5,9 +5,13 @@ const MAX_PITCH = Math.PI / 2 - 0.01
 export class InputState {
   yaw = 0
   pitch = 0
+  // Multiplier on the mouse sensitivity (ADS lowers it with the zoom).
+  lookScale = 1
   private readonly held = new Set<string>()
   private readonly pressed = new Set<string>()
   private readonly clicked = new Set<number>()
+  private mouseDx = 0
+  private mouseDy = 0
   private readonly mouseHeld = new Set<number>()
   private wheelSteps = 0
 
@@ -47,6 +51,14 @@ export class InputState {
 
   isMouseHeld(button: number): boolean {
     return this.mouseHeld.has(button)
+  }
+
+  // Mouse movement in px since the last call, for the weapon sway.
+  takeMouseDelta(): [number, number] {
+    const delta: [number, number] = [this.mouseDx, this.mouseDy]
+    this.mouseDx = 0
+    this.mouseDy = 0
+    return delta
   }
 
   // Net wheel notches since the last call: positive scrolls down.
@@ -94,8 +106,10 @@ export class InputState {
 
   private readonly onMouseMove = (event: MouseEvent): void => {
     if (!this.locked) return
-    this.yaw -= event.movementX * LOOK_SENSITIVITY
-    this.pitch -= event.movementY * LOOK_SENSITIVITY
+    this.yaw -= event.movementX * LOOK_SENSITIVITY * this.lookScale
+    this.pitch -= event.movementY * LOOK_SENSITIVITY * this.lookScale
+    this.mouseDx += event.movementX
+    this.mouseDy += event.movementY
     this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch))
   }
 

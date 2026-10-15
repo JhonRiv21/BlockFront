@@ -107,3 +107,24 @@ describe('sweepAabb', () => {
     expect(b.min[1]).toBe(0)
   })
 })
+
+describe('sweepAabb at exact corners', () => {
+  it('cannot slip diagonally through the corner of a block', () => {
+    // Both the x and z boundaries are reached at the same time; the box must stop, not tunnel.
+    const corner: Solid = (x, y, z) => y < 0 || (x === 4 && z === 4)
+    const b = box(3.5, 0, 3.5)
+    sweepAabb(corner, b, [2, 0, 2])
+    expect(b.max[0] <= 4 || b.max[2] <= 4).toBe(true)
+    // Whatever it did, it never overlaps the block.
+    expect(b.max[0] > 4 && b.max[2] > 4 && b.min[0] < 5 && b.min[2] < 5).toBe(false)
+  })
+
+  it('cannot jump into a block edge-on: the vertical and horizontal crossings coincide', () => {
+    const ledge: Solid = (x, y) => y < 0 || (x >= 6 && y < 2)
+    // Rising past y = 2 at the exact moment its right side reaches x = 6.
+    const b = box(5.5, 1.8, 0.5)
+    sweepAabb(ledge, b, [0.2, 0.2, 0])
+    const inside = b.max[0] > 6 && b.min[1] < 2
+    expect(inside).toBe(false)
+  })
+})

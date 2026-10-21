@@ -785,3 +785,70 @@ Spec: `docs/f2-6-feel.md` §1 and §3. Plus the playtest fixes at the top of the
   only the victim and the cause; feed labels and player names go through the dictionaries.
 - Crouch accuracy (2026-10-14): crouching now multiplies hip and ADS spread by 0.65 (was 0.8),
   for every weapon. Rifle from the hip crouched: 1.04° instead of 1.28°.
+
+## F2.7 — Foundations (2026-10-14)
+
+Executed from `docs/audit-2026-10-14.md`: points 1–9 of "must have before F3" plus the §2 bugs.
+Checks green throughout: typecheck, lint, format, wrangler dry-run, **203 sim tests** (+7) and
+**16 client tests** (+5).
+
+**Refactor first, behaviour unchanged.**
+
+- `packages/sim/src/game.ts` 871 → 358 lines. The systems moved to `src/match/`: `types`
+  (config, events, snapshots), `entities` (PlayerEntity and eye/body helpers), `context`
+  (what the systems need from the Game, which implements it), `damage` (applyDamage, knockback),
+  `block-edits` (place, dig, water fill, decor), `hitscan` (spread, scatter, bullets, shovel) and
+  `grenades` (cook, throw, step, explode). Only the two water tests changed, to call the exported
+  helper instead of a private method. One latent bug went with it: a blast at exactly the body
+  centre divided by zero; it now pushes straight up.
+- `apps/client/src/lib/render/game-renderer.ts` 1180 → 735 lines (it then grew with the
+  lifecycle below). Extracted: `snapshot-buffer` (interpolation and speeds), `input/controls`
+  (slots, colours, InputFrame), `event-feedback` (every reaction to a sim event, 360 lines),
+  `ads-view`, `underwater` and `entities-view` (other players, grenades, glints).
+
+**Fixes and foundations.**
+
+1. Controls: crouch is **C only** (Ctrl is gone, so Ctrl+W cannot close the tab); **P pauses**
+   besides Esc; `input/latch.ts` latches every press until the tick after it, so taps shorter
+   than 33 ms (trackpads, fast jumps, semi-autos) are no longer lost. Spec test: `latch.test.ts`.
+2. Lifecycle: the sim worker keeps **one timer** across start/stop/restart (`start` tears the
+   previous match down); `pause`/`resume`/`stop` messages; `Transport` grew the same methods
+   plus `onError`. `Game.addPlayer` / `removePlayer` with tests (join spawns fresh, a leaver's
+   grenade still explodes, serialize round-trip). Menu and match are separate: the renderer no
+   longer starts a match on mount; `startMatch(primary)` / `endMatch()` drive it and the HUD has
+   a main menu (title, primary, Play) and a pause panel (resume, primary as a testing tool,
+   quit). Measured in a hidden tab: 30.0 Hz after three consecutive restarts and after a
+   pause/resume.
+3. Real pause: losing the pointer lock, `visibilitychange` to hidden, or P pause the sim worker;
+   regaining the lock resumes it with the fixed-step clocks reset, so no catch-up burst.
+4. Pointer lock: requested with `unadjustedMovement: true` and a plain retry if the option
+   throws; `pointerlockerror` and promise rejections surface as a HUD hint; a request within
+   1.3 s of an Esc release is refused with a "wait a moment" hint instead of a silent browser
+   error; mouse deltas are clamped to ±300 px per event.
+5. Errors: `webglcontextlost` stops the loop, pauses and shows an overlay; `webglcontextrestored`
+   resumes drawing. A sim worker error or a mesher pool that keeps losing workers shows a fatal
+   overlay with Reload. A dead mesher worker is replaced (up to 3 times) and the chunk it held is
+   re-sent once with a fresh copy. In dev, `error` and `unhandledrejection` show in a red log at
+   the top left.
+6. Debug out of production: the performance overlay is off by default and toggles with **F3**;
+   F (free camera) and H (hitboxes) exist only in dev builds, as does their hint line.
+7. Health bars are depth-tested: no more bars through walls.
+8. Deterministic replay (`replay.test.ts`): a 300-tick script that walks, jumps, shoots two
+   guns, throws a grenade, digs and builds gives identical `serialize()` output and identical
+   event streams on two runs; a mid-match save restored and replayed lands on the same state;
+   a different seed diverges.
+
+**Numbers.** Client build: app 62.3 KB gzip + three 161.5 KB gzip (≈ 224 KB JS, budget 600).
+Point 10 (fps in a visible tab) stays with Jhon.
+
+**Known gaps left for F3.** The primary still changes immediately from the pause panel (testing
+tool, as agreed); names are still injected localized into the config; `scoreBlue/Red` remain a
+placeholder.
+
+- Playtest fixes (2026-10-20): the pause panel highlights the primary as soon as it is clicked
+  (the sim's weapon takes over on resume); a click too soon after Esc is retried by itself after
+  the browser's cooldown instead of asking the player to wait; the sleeve of each arm is drawn
+  only from 35 % of the arm on, so it no longer crosses the viewmodel camera's near plane (that
+  cut was the jagged flicker on the hand while moving).
+- Wrist stripes (2026-10-20): the hand cube and the sleeve shared the same 0.1 width and
+  overlapped by 2 cm, so their side faces z-fought; the hand is now 0.11 wide like the cuff.

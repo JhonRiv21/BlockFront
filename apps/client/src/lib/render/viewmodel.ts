@@ -36,9 +36,12 @@ const DRAW_SECONDS = 0.45
 const SWING_SECONDS = 0.35
 const PLACE_SECONDS = 0.2
 const HITSTOP_SECONDS = 0.045
-const SHOULDER_RIGHT = new Vector3(0.28, -0.38, 0.05)
-const SHOULDER_LEFT = new Vector3(-0.28, -0.38, 0.05)
+const SHOULDER_RIGHT = new Vector3(0.3, -0.42, 0.05)
+const SHOULDER_LEFT = new Vector3(-0.3, -0.42, 0.05)
 const SLEEVE = 0.45
+// The shoulder sits behind the camera; the sleeve is only drawn from this share of the arm on,
+// so it never crosses the near plane (that cut flickered as the arm moved).
+const SLEEVE_START = 0.35
 const SHOVEL_GRIP = new Vector3(0, 0, 0.2)
 const BLOCK_GRIP = new Vector3(0, -0.14, 0.02)
 const TEAM_CUFF: Record<Team, string> = { blue: '#2f6fe4', red: '#e03a3a' }
@@ -223,18 +226,21 @@ export class Viewmodel {
 
   private buildArm(shoulder: Vector3, team: Team): BlockArm {
     const arm = new BlockArm(shoulder, SLEEVE)
+    const drawn = SLEEVE * (1 - SLEEVE_START)
     const sleeve = new Mesh(
-      new BoxGeometry(0.1, 0.1, SLEEVE),
+      new BoxGeometry(0.1, 0.1, drawn),
       new MeshLambertMaterial({ color: '#3b4a6b' }),
     )
-    sleeve.position.z = SLEEVE / 2
+    sleeve.position.z = SLEEVE - drawn / 2
     const cuff = new Mesh(
       new BoxGeometry(0.11, 0.11, 0.06),
       new MeshLambertMaterial({ color: TEAM_CUFF[team] }),
     )
     cuff.position.z = SLEEVE - 0.06
+    // A hair wider than the sleeve: the two overlap for 2 cm, and equal widths left their side
+    // faces coplanar, which z-fought as hatched stripes at the wrist.
     const hand = new Mesh(
-      new BoxGeometry(0.1, 0.1, 0.1),
+      new BoxGeometry(0.11, 0.11, 0.1),
       new MeshLambertMaterial({ color: '#e0b48a' }),
     )
     hand.position.z = SLEEVE + 0.03

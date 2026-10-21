@@ -7,6 +7,7 @@ import type { Transport, UpdateListener } from './transport.ts'
 export class LocalTransport implements Transport {
   private readonly worker: Worker
   private listener: UpdateListener | null = null
+  private errorListener: ((message: string) => void) | null = null
   private readonly stepSamples: number[] = []
 
   constructor() {
@@ -22,6 +23,10 @@ export class LocalTransport implements Transport {
     }
     this.worker.onerror = (event) => {
       console.error('sim worker failed', event.message)
+      this.errorListener?.(event.message || 'sim worker failed')
+    }
+    this.worker.onmessageerror = () => {
+      this.errorListener?.('sim worker sent an unreadable message')
     }
   }
 
@@ -33,7 +38,20 @@ export class LocalTransport implements Transport {
   }
 
   start(config: GameConfig, localPlayerId: number): void {
+    this.stepSamples.length = 0
     this.post({ type: 'start', config, localPlayerId })
+  }
+
+  stop(): void {
+    this.post({ type: 'stop' })
+  }
+
+  pause(): void {
+    this.post({ type: 'pause' })
+  }
+
+  resume(): void {
+    this.post({ type: 'resume' })
   }
 
   sendInput(frame: InputFrame): void {
@@ -44,8 +62,13 @@ export class LocalTransport implements Transport {
     this.listener = listener
   }
 
+  onError(listener: (message: string) => void): void {
+    this.errorListener = listener
+  }
+
   dispose(): void {
     this.listener = null
+    this.errorListener = null
     this.worker.terminate()
   }
 

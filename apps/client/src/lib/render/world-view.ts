@@ -3,7 +3,7 @@ import type { BlockId } from '@blockfront/sim/world/blocks'
 import type { ChunkMesh, DecorMesh, SurfaceMesh } from '@blockfront/sim/world/mesher'
 import { chunkKey, type ChunkCoord, type World } from '@blockfront/sim/world/world'
 import { BufferAttribute, BufferGeometry, Mesh, type Material, type Scene } from 'three'
-import type { MesherPool } from '../mesher/mesher-pool.ts'
+import { WorkerLostError, type MesherPool } from '../mesher/mesher-pool.ts'
 
 export interface WorldMaterials {
   opaque: Material
@@ -60,10 +60,18 @@ export class WorldView {
     this.quadsByChunk.clear()
   }
 
-  private async remesh(coord: ChunkCoord): Promise<void> {
+  private async remesh(coord: ChunkCoord, retry = true): Promise<void> {
     const key = chunkKey(coord.cx, coord.cy, coord.cz)
     const voxels = this.world.copyPaddedChunk(coord.cx, coord.cy, coord.cz)
-    const mesh = await this.pool.mesh(key, voxels)
+    let mesh: ChunkMesh | null
+    try {
+      mesh = await this.pool.mesh(key, voxels)
+    } catch (error) {
+      // The worker died with our chunk; the buffer went with it, so send a fresh copy once.
+      if (error instanceof WorkerLostError && retry && !this.disposed)
+        return this.remesh(coord, false)
+      throw error
+    }
     if (mesh === null || this.disposed) return
     this.apply(key, coord, mesh)
   }

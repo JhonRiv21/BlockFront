@@ -1,19 +1,30 @@
+import { Latch } from './latch.ts'
+
 const LOOK_SENSITIVITY = 0.0022
 const MAX_PITCH = Math.PI / 2 - 0.01
+// Chrome refuses a new lock for about 1.25 s after Esc released the previous one.
+const LOCK_COOLDOWN_MS = 1300
+// Mouse events bigger than this (px) are glitches, not flicks: driver hiccups, tab switches.
+const FLICK_CLAMP = 300
 
-// Keyboard, mouse look and mouse buttons, all gated by pointer lock on the canvas.
+export type LockFailure = 'rejected'
+
+// Keyboard, mouse look and mouse buttons, all gated by pointer lock on the canvas. Presses are
+// latched so a tap shorter than a sim tick is still delivered (see Latch).
 export class InputState {
   yaw = 0
   pitch = 0
   // Multiplier on the mouse sensitivity (ADS lowers it with the zoom).
   lookScale = 1
-  private readonly held = new Set<string>()
-  private readonly pressed = new Set<string>()
-  private readonly clicked = new Set<number>()
+  onLockFailure: (reason: LockFailure) => void = () => {}
+  private readonly keys = new Latch()
+  private readonly buttons = new Latch()
   private mouseDx = 0
   private mouseDy = 0
-  private readonly mouseHeld = new Set<number>()
   private wheelSteps = 0
+  private unlockedAt = -Infinity
+  private requesting = false
+  private retryTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(
     private readonly element: HTMLElement,
@@ -22,6 +33,7 @@ export class InputState {
     element.addEventListener('click', this.onClick)
     element.addEventListener('contextmenu', this.onContextMenu)
     document.addEventListener('pointerlockchange', this.onPointerLockChange)
+    document.addEventListener('pointerlockerror', this.onPointerLockError)
     document.addEventListener('mousemove', this.onMouseMove)
     document.addEventListener('mousedown', this.onMouseDown)
     document.addEventListener('mouseup', this.onMouseUp)
@@ -36,21 +48,27 @@ export class InputState {
   }
 
   isHeld(code: string): boolean {
-    return this.held.has(code)
+    return this.keys.isHeld(code)
   }
 
   // True once per physical key press.
   takePressed(code: string): boolean {
-    return this.pressed.delete(code)
+    return this.keys.takePressed(code)
   }
 
   // True once per mouse button press (0 left, 2 right).
   takeClick(button: number): boolean {
-    return this.clicked.delete(button)
+    return this.buttons.takePressed(String(button))
   }
 
   isMouseHeld(button: number): boolean {
-    return this.mouseHeld.has(button)
+    return this.buttons.isHeld(String(button))
+  }
+
+  // The input for one sim tick has been built: taps shorter than a tick have been delivered.
+  endTick(): void {
+    this.keys.endTick()
+    this.buttons.endTick()
   }
 
   // Mouse movement in px since the last call, for the weapon sway.
@@ -69,13 +87,53 @@ export class InputState {
   }
 
   axis(negative: string, positive: string): number {
-    return (this.held.has(positive) ? 1 : 0) - (this.held.has(negative) ? 1 : 0)
+    return (this.keys.isHeld(positive) ? 1 : 0) - (this.keys.isHeld(negative) ? 1 : 0)
+  }
+
+  // Ask for the lock with raw mouse deltas; fall back to the plain request where the option is
+  // not supported. A click too soon after Esc is retried by itself once the browser's cooldown
+  // has passed (the click's activation still counts); only a refusal after that is reported.
+  requestLock(retry = true): void {
+    if (this.locked || this.requesting) return
+    const sinceUnlock = performance.now() - this.unlockedAt
+    if (sinceUnlock < LOCK_COOLDOWN_MS) {
+      this.scheduleRetry(LOCK_COOLDOWN_MS - sinceUnlock)
+      return
+    }
+    this.requesting = true
+    const plain = () => this.element.requestPointerLock()
+    const withRaw = () => this.element.requestPointerLock({ unadjustedMovement: true })
+    Promise.resolve()
+      .then(withRaw)
+      .catch(plain)
+      .catch(() => {
+        if (retry) this.scheduleRetry(LOCK_COOLDOWN_MS)
+        else this.onLockFailure('rejected')
+      })
+      .finally(() => {
+        this.requesting = false
+      })
+  }
+
+  private scheduleRetry(delayMs: number): void {
+    if (this.retryTimer !== null) clearTimeout(this.retryTimer)
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null
+      this.requestLock(false)
+    }, delayMs + 20)
+  }
+
+  releaseLock(): void {
+    if (this.retryTimer !== null) clearTimeout(this.retryTimer)
+    this.retryTimer = null
+    if (this.locked) document.exitPointerLock()
   }
 
   dispose(): void {
     this.element.removeEventListener('click', this.onClick)
     this.element.removeEventListener('contextmenu', this.onContextMenu)
     document.removeEventListener('pointerlockchange', this.onPointerLockChange)
+    document.removeEventListener('pointerlockerror', this.onPointerLockError)
     document.removeEventListener('mousemove', this.onMouseMove)
     document.removeEventListener('mousedown', this.onMouseDown)
     document.removeEventListener('mouseup', this.onMouseUp)
@@ -83,11 +141,11 @@ export class InputState {
     window.removeEventListener('keydown', this.onKeyDown)
     window.removeEventListener('keyup', this.onKeyUp)
     window.removeEventListener('blur', this.onBlur)
-    if (this.locked) document.exitPointerLock()
+    this.releaseLock()
   }
 
   private readonly onClick = (): void => {
-    if (!this.locked) this.element.requestPointerLock()
+    this.requestLock()
   }
 
   private readonly onContextMenu = (event: Event): void => {
@@ -96,31 +154,35 @@ export class InputState {
 
   private readonly onPointerLockChange = (): void => {
     if (!this.locked) {
-      this.held.clear()
-      this.pressed.clear()
-      this.clicked.clear()
-      this.mouseHeld.clear()
+      this.unlockedAt = performance.now()
+      this.keys.clear()
+      this.buttons.clear()
     }
     this.onLockChange(this.locked)
   }
 
+  private readonly onPointerLockError = (): void => {
+    this.onLockFailure('rejected')
+  }
+
   private readonly onMouseMove = (event: MouseEvent): void => {
     if (!this.locked) return
-    this.yaw -= event.movementX * LOOK_SENSITIVITY * this.lookScale
-    this.pitch -= event.movementY * LOOK_SENSITIVITY * this.lookScale
-    this.mouseDx += event.movementX
-    this.mouseDy += event.movementY
+    const dx = Math.max(-FLICK_CLAMP, Math.min(FLICK_CLAMP, event.movementX))
+    const dy = Math.max(-FLICK_CLAMP, Math.min(FLICK_CLAMP, event.movementY))
+    this.yaw -= dx * LOOK_SENSITIVITY * this.lookScale
+    this.pitch -= dy * LOOK_SENSITIVITY * this.lookScale
+    this.mouseDx += dx
+    this.mouseDy += dy
     this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch))
   }
 
   private readonly onMouseDown = (event: MouseEvent): void => {
     if (!this.locked) return
-    this.clicked.add(event.button)
-    this.mouseHeld.add(event.button)
+    this.buttons.press(String(event.button))
   }
 
   private readonly onMouseUp = (event: MouseEvent): void => {
-    this.mouseHeld.delete(event.button)
+    this.buttons.release(String(event.button))
   }
 
   private readonly onWheel = (event: WheelEvent): void => {
@@ -131,17 +193,17 @@ export class InputState {
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (!this.locked) return
-    if (!event.repeat) this.pressed.add(event.code)
-    this.held.add(event.code)
-    if (event.code === 'Space' || event.code === 'Tab') event.preventDefault()
+    if (!event.repeat) this.keys.press(event.code)
+    if (event.code === 'Space' || event.code === 'Tab' || event.code === 'F3')
+      event.preventDefault()
   }
 
   private readonly onKeyUp = (event: KeyboardEvent): void => {
-    this.held.delete(event.code)
+    this.keys.release(event.code)
   }
 
   private readonly onBlur = (): void => {
-    this.held.clear()
-    this.mouseHeld.clear()
+    this.keys.clear()
+    this.buttons.clear()
   }
 }

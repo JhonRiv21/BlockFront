@@ -46,6 +46,19 @@ export const mountGame: Attachment<HTMLCanvasElement> = (canvas) => {
     onDryFire: () => {
       hudState.dryFireAt = performance.now()
     },
+    onPhase: (phase) => {
+      hudState.phase = phase
+    },
+    onShowStats: (shown) => {
+      hudState.showStats = shown
+    },
+    onLockFailure: (reason) => {
+      hudState.lockFailure = reason
+      hudState.lockFailureAt = performance.now()
+    },
+    onFatal: (fatal) => {
+      hudState.fatal = fatal
+    },
     onItem: (name) => {
       hudState.itemName = name
       hudState.itemNameAt = performance.now()
@@ -68,6 +81,7 @@ export const mountGame: Attachment<HTMLCanvasElement> = (canvas) => {
       hudState.respawnIn = player.respawnIn
       hudState.slot = player.slot
       hudState.weapon = player.weapon
+      hudState.menuPrimary = player.weapon
       hudState.mag = player.mag
       hudState.reserve = player.reserve
       hudState.reloading = player.reloading
@@ -90,14 +104,29 @@ export const mountGame: Attachment<HTMLCanvasElement> = (canvas) => {
       }
     },
   })
-  hudState.selectPrimary = (weapon) => renderer.setPrimary(weapon)
+  hudState.selectPrimary = (weapon) => {
+    hudState.menuPrimary = weapon
+    renderer.setPrimary(weapon)
+  }
+  hudState.startMatch = (primary) => renderer.startMatch(primary)
+  hudState.quitMatch = () => renderer.endMatch()
   renderer.start()
+  // Uncaught errors land in a visible log while developing; production keeps the console.
+  const logError = (event: ErrorEvent | PromiseRejectionEvent) => {
+    const reason = 'reason' in event ? event.reason : event.message
+    const text = reason instanceof Error ? reason.message : String(reason)
+    hudState.errorLog = [...hudState.errorLog.slice(-4), text]
+  }
   if (import.meta.env.DEV) {
+    window.addEventListener('error', logError)
+    window.addEventListener('unhandledrejection', logError)
     // window.blockfront.pool.stats(), .transport.stepStats(), .snapshot(), .assets, .renderOnce()
     Object.assign(window, { blockfront: renderer.debug })
   }
   return () => {
     clearTimeout(hitmarkerTimer)
+    window.removeEventListener('error', logError)
+    window.removeEventListener('unhandledrejection', logError)
     renderer.dispose()
   }
 }

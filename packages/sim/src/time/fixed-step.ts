@@ -25,4 +25,9 @@ export class FixedStep {
     }
     return { steps, alpha: this.accumulator / this.stepSeconds }
   }
+
+  // Drop any time owed, for a resume after a pause: the sim must not catch up on the gap.
+  reset(): void {
+    this.accumulator = 0
+  }
 }

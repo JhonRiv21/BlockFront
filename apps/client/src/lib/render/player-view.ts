@@ -66,10 +66,11 @@ export class PlayerView {
     this.placeholder.position.y = PLAYER.height / 2
     // Health bar: camera-facing sprites, the fill anchored on its left edge so it shrinks inward.
     this.barBackground = new Sprite(
-      new SpriteMaterial({ color: '#10131c', transparent: true, opacity: 0.7, depthTest: false }),
+      new SpriteMaterial({ color: '#10131c', transparent: true, opacity: 0.7 }),
     )
     this.barBackground.scale.set(BAR_WIDTH + 0.04, BAR_HEIGHT + 0.04, 1)
-    this.barFill = new Sprite(new SpriteMaterial({ color: '#4ade80', depthTest: false }))
+    // Depth-tested on purpose: a bar visible through walls is a wallhack.
+    this.barFill = new Sprite(new SpriteMaterial({ color: '#4ade80' }))
     this.barFill.center.set(0, 0.5)
     this.barFill.scale.set(BAR_WIDTH, BAR_HEIGHT, 1)
     this.barBackground.renderOrder = 10

@@ -254,7 +254,36 @@ Correcciones tras el playtest, con fuentes y números en [`docs/f2-6-feel.md`](d
 - **Parte B:** pala estilo Minecraft y motor de sonido con grabaciones reales CC0.
 - **Hecho cuando:** Jhon aprueba la sensación en una pestaña visible.
 
+### F2.7 — Cimientos (antes de bots)
+Auditoría contra el estándar (Poki, CrazyGames, guías de accesibilidad) en
+[`docs/audit-2026-10-14.md`](docs/audit-2026-10-14.md).
+- Cierra los bugs que bloquean F3 (§2 del documento): Ctrl+W, `setInterval` duplicado y taps
+  perdidos.
+- Agrega:
+  - Ciclo de vida de la partida.
+  - Pausa real.
+  - Pointer lock robusto.
+  - Manejo de errores (WebGL y workers).
+  - Debug fuera de producción.
+  - Refactor de `game-renderer.ts` y `game.ts`.
+  - Prueba de repetición determinista.
+- **Hecho cuando:**
+  - Los 10 puntos de «Imprescindible antes de F3» cumplidos.
+  - Los fps medidos por Jhon en una pestaña visible.
+
 ### F3 — CTF + bots → **Entrega 1 (presentable)**
+- **Capa de producto según el estándar:** ver «Imprescindible en F3» en
+  `docs/audit-2026-10-14.md`. Incluye:
+  - Ajustes completos y reasignación de teclas.
+  - Marcador con Tab.
+  - Pantalla de muerte.
+  - Nameplates de aliados.
+  - Convenciones de CTF de TF2.
+  - Brújula.
+  - Tutorial que se puede saltar.
+  - Pantalla «solo escritorio».
+  - Accesibilidad básica.
+  - Meta tags.
 - **Agregado tras F2.6 (aprobado por Jhon):**
   - Protección al aparecer.
   - TNT y bloque reforzado.

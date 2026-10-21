@@ -18,6 +18,9 @@ export interface DamageIndicator {
 }
 
 export type CameraMode = 'fps' | 'fly'
+// menu: no match running. paused: match stopped, pointer free. playing: pointer locked, sim running.
+export type Phase = 'menu' | 'playing' | 'paused'
+export type FatalKind = 'webgl' | 'sim' | 'mesher'
 
 class HudState {
   fps = $state(0)
@@ -28,6 +31,17 @@ class HudState {
   simMaxMs = $state(0)
   quads = $state(0)
   pointerLocked = $state(false)
+  phase = $state<Phase>('menu')
+  // Primary chosen in the main menu for the next match.
+  menuPrimary = $state<WeaponId>('rifle')
+  // Performance overlay, toggled with F3.
+  showStats = $state(false)
+  fatal = $state<{ kind: FatalKind; message: string } | null>(null)
+  // Last pointer-lock refusal and when it happened; shown as a short hint.
+  lockFailure = $state<'rejected' | null>(null)
+  lockFailureAt = $state(-1e9)
+  // Uncaught errors, shown only in dev builds.
+  errorLog = $state<string[]>([])
   mode = $state<CameraMode>('fps')
   showHitboxes = $state(false)
   assetsReady = $state(false)
@@ -81,8 +95,10 @@ class HudState {
   blastStrength = $state(0)
   now = $state(0)
   showHpNumber = $state(false)
-  // Set by the mount: asks the game for a different primary weapon.
+  // Set by the mount: intentions the panels emit; the renderer carries them out.
   selectPrimary: (weapon: WeaponId) => void = () => {}
+  startMatch: (primary: WeaponId) => void = () => {}
+  quitMatch: () => void = () => {}
 }
 
 export const hudState = new HudState()

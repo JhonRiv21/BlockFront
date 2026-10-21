@@ -3,6 +3,7 @@ import { TICK_RATE } from './config.ts'
 import { Game, type GameEvent } from './game.ts'
 import { GRENADE } from './combat/weapons.ts'
 import { BUTTON, createInputFrame, type InputFrame } from './input.ts'
+import { fillWithWater } from './match/block-edits.ts'
 import { BLOCK } from './world/blocks.ts'
 
 // Written from PLAN.md §2–3: the game steps at 30 Hz from InputFrames and emits events; digging
@@ -153,13 +154,9 @@ describe('water rules', () => {
       }
     expect(target).not.toBeNull()
     const [x, y, z] = target!
-    // Blow it up through the private helper path used by shovel and grenade.
-    const health = g['health'] as {
-      damage: (x: number, y: number, z: number, amount: number) => boolean
-    }
-    expect(health.damage(x, y, z, 1000)).toBe(true)
-    const fill = g['fillWithWater'] as (x: number, y: number, z: number) => void
-    fill.call(g, x, y, z)
+    // Blow it up through the same path the shovel and the grenade use.
+    expect(g.health.damage(x, y, z, 1000)).toBe(true)
+    fillWithWater(g, x, y, z)
     expect(g.world.getBlock(x, y, z)).toBe(BLOCK.water)
     // The neighbour on the dry side stays as it was: no cascade.
     expect(g.world.getBlock(x, y, z - 1)).not.toBe(BLOCK.water)
@@ -167,10 +164,9 @@ describe('water rules', () => {
 
   it('does not fill holes above the water level', () => {
     const g = game()
-    const fill = g['fillWithWater'] as (x: number, y: number, z: number) => void
     g.world.fillBlock(10, 30, 10, BLOCK.air)
     g.world.fillBlock(11, 30, 10, BLOCK.water)
-    fill.call(g, 10, 30, 10)
+    fillWithWater(g, 10, 30, 10)
     expect(g.world.getBlock(10, 30, 10)).toBe(BLOCK.air)
   })
 

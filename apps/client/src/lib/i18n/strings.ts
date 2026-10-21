@@ -21,12 +21,23 @@ export const en = {
   'hud.loadingAssets': 'Loading assets',
   'hud.primaryWeapon': 'Primary weapon',
   'hud.clickToPlay': 'Click to play',
-  'hint.move': 'WASD move · Space jump/swim · Ctrl/C crouch · Shift sprint · R reload',
+  'hint.move': 'WASD move · Space jump/swim · C crouch · Shift sprint · R reload',
   'hint.slots':
     '1 weapon · 2 pistol · 3 shovel · 4 blocks (4 again or wheel: colour) · 5 grenade · G throw · Q last',
   'hint.mouse':
-    'Left click use · Right click aim / column · Middle click pick colour · F free camera · H hitboxes',
+    'Left click use · Right click aim / column · Middle click pick colour · Esc or P pause · F3 stats',
+  'hint.dev': 'Dev: F free camera · H hitboxes',
   'hint.fly': 'WASD move · Space/C up/down · Shift fast · F back to the player',
+  'menu.subtitle': 'Voxel capture the flag. Practice match against dummies.',
+  'menu.play': 'Play',
+  'pause.title': 'Paused',
+  'pause.resume': 'Click to resume',
+  'pause.quit': 'Quit to menu',
+  'error.webgl': 'The graphics context was lost. Waiting for the browser to restore it…',
+  'error.sim': 'The simulation stopped working.',
+  'error.mesher': 'The mesh workers keep failing.',
+  'error.reload': 'Reload',
+  'lock.rejected': 'The browser did not allow mouse capture. Click again.',
 } as const
 
 export type StringKey = keyof typeof en
@@ -53,12 +64,23 @@ export const es: Record<StringKey, string> = {
   'hud.loadingAssets': 'Cargando assets',
   'hud.primaryWeapon': 'Arma primaria',
   'hud.clickToPlay': 'Clic para jugar',
-  'hint.move': 'WASD mover · Espacio saltar/nadar · Ctrl/C agacharse · Shift correr · R recargar',
+  'hint.move': 'WASD mover · Espacio saltar/nadar · C agacharse · Shift correr · R recargar',
   'hint.slots':
     '1 arma · 2 pistola · 3 pala · 4 bloques (4 de nuevo o rueda: color) · 5 granada · G lanzar · Q anterior',
   'hint.mouse':
-    'Clic izq. usar · Clic der. mira / columna · Clic medio copiar color · F cámara libre · H hitboxes',
+    'Clic izq. usar · Clic der. mira / columna · Clic medio copiar color · Esc o P pausa · F3 estadísticas',
+  'hint.dev': 'Dev: F cámara libre · H hitboxes',
   'hint.fly': 'WASD mover · Espacio/C subir/bajar · Shift rápido · F volver al jugador',
+  'menu.subtitle': 'Captura la bandera voxel. Partida de práctica contra maniquíes.',
+  'menu.play': 'Jugar',
+  'pause.title': 'Pausa',
+  'pause.resume': 'Clic para continuar',
+  'pause.quit': 'Salir al menú',
+  'error.webgl': 'Se perdió el contexto gráfico. Esperando a que el navegador lo restaure…',
+  'error.sim': 'La simulación dejó de funcionar.',
+  'error.mesher': 'Los workers de mallado siguen fallando.',
+  'error.reload': 'Recargar',
+  'lock.rejected': 'El navegador no permitió capturar el ratón. Haz clic de nuevo.',
 }
 
 export const LOCALES = { en, es } as const

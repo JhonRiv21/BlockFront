@@ -197,7 +197,8 @@ Las constantes de Minecraft están en ticks de 20 Hz y hay que convertirlas a nu
 | Arrastre en agua | `vel *= 0.8` por tick de 20 Hz, es decir `0.8^(dt·20)` |
 | Gravedad en agua | ~0,1 de la normal; hundimiento terminal ~0,5 bloques/s |
 | Subir | Mantener Espacio: +0,04 por tick de 20 Hz (≈ 1,6 bloques/s de subida neta [I]) |
-| Velocidad horizontal | Superficie ~2,2 bloques/s; sumergido ~2,0. Sin sprint en agua |
+| Velocidad horizontal | Superficie ~2,2 bloques/s; sumergido ~2,0 (caminar en agua) |
+| Nado con sprint (Minecraft 1.13, añadido 2026-10-20) | Sprint + adelante con el cuerpo al menos medio sumergido: ~5,6 bloques/s en la dirección de la mirada; mirar abajo bucea, mirar arriba sale; con la mirada al frente se mantiene en superficie. Espacio sube, agacharse baja |
 | Agacharse | Hunde más rápido |
 | Salir por el borde | Si choca en horizontal estando en agua y el espacio 0,6 más arriba está libre: impulso vertical de ≈ 6 bloques/s |
 | Detección | `inWater` (física) por el ratio sumergido del AABB, y `eyeInWater` (overlay y aire) por el voxel del ojo |

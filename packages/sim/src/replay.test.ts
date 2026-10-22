@@ -17,7 +17,7 @@ function config(seed: number) {
         team: 'red' as const,
         name: 'dummy',
         dummy: true,
-        spawn: [61, 28] as [number, number],
+        spawn: [45, 28] as [number, number],
       },
     ],
   }

@@ -99,7 +99,8 @@ blockfront/
 - Fuego amigo apagado; destruir bloques de la base propia está bloqueado (anti-grief).
 
 ### Mapa
-- 128 (ancho) × 192 (largo) × 64 (alto) voxels; chunks de **32³** → 4 × 6 × 2 = 48 chunks.
+- 96 (ancho) × 128 (largo) × 64 (alto) voxels; chunks de **32³** → 3 × 4 × 2 = 24 chunks (reducido
+  el 2026-10-20: con 192 de largo las bases quedaban a 151 bloques, demasiado lejos).
 - Bloque = `Uint8` → índice a una **paleta de 64 colores** (tierra, pasto, piedra, arena, madera,
   bloque azul, bloque rojo, roca indestructible del fondo…). Variación de tono por hash de la
   posición para que no se vea plano.
@@ -299,6 +300,16 @@ Auditoría contra el estándar (Poki, CrazyGames, guías de accesibilidad) en
   - Pantalla de controles.
 - i18n ES/EN con selector y `localStorage` (mismo patrón que el museo).
 - Deploy a `blockfront.riverogz.com` (Cloudflare, Always Use HTTPS, TLS ≥ 1.2).
+- **Orden de ejecución** (decidido el 2026-10-20, tras validar F2.7):
+
+  | Parte | Contenido |
+  |---|---|
+  | **A, reglas y flujo de partida** | CTF completo (banderas, capturas, oleadas de 8 s, recarga y curación en base, anti-grief), elección de arma solo al aparecer, protección al aparecer y bloques de equipo que solo rompen los enemigos (D3). Marcador con Tab, pantalla de muerte, nameplates de aliados, portador visible para su equipo, brújula y fin de partida. Antes de agregar UI, **dividir `Hud.svelte` en componentes** (menú, pausa, HUD de juego, overlays). Los nombres dejan de inyectarse localizados en la config |
+  | **B, ítems nuevos** | TNT, bloque reforzado, escalera de mano (anula la caída) y botiquín, según el §6 de `docs/f2-6-feel.md` |
+  | **C, bots: núcleo** | Percepción, puntería humana, A* (caminar, saltar, caer y escaleras), roles, behavior trees, 3 dificultades y harness headless en Node |
+  | **D, bots: construir y equilibrar** | Excavar, construir, usar TNT, defensas y balance con el harness |
+  | **E, producto y entrega** | Menú completo, ajustes guardados con reasignación de teclas, i18n con selector, tutorial, pantalla «solo escritorio», accesibilidad básica, meta tags, carga con precalentado, smoke con Playwright y deploy (los comandos los ejecuta Jhon) |
+
 - **Hecho cuando**:
   - Un 4v4 de bots Veterano juega solo una partida completa y alguien captura.
   - Un humano promedio le gana a Recluta y pierde con frecuencia ante Veterano.

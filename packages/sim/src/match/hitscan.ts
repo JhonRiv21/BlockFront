@@ -28,6 +28,7 @@ export function spreadOf(player: PlayerEntity): number {
 
 export function fireWeapon(ctx: MatchContext, player: PlayerEntity, weapon: WeaponState): void {
   const spec = WEAPONS[weapon.weapon]
+  player.protectedUntil = 0
   const spread = spreadOf(player)
   const blend = adsBlend(player.ads)
   const origin = eyePosition(player)
@@ -127,12 +128,22 @@ function traceBullet(
       Math.min(KNOCKBACK.max, KNOCKBACK.min + damage * KNOCKBACK.perDamage),
     )
   } else if (blockHit && blockDamage > 0) {
-    damageBlock(ctx, blockHit.x, blockHit.y, blockHit.z, blockDamage, null, blockHit.normal)
+    damageBlock(
+      ctx,
+      blockHit.x,
+      blockHit.y,
+      blockHit.z,
+      blockDamage,
+      null,
+      shooter.config.team,
+      blockHit.normal,
+    )
   }
 }
 
 // The shovel lands: melee on an enemy within reach, otherwise one block (or a column of three).
 export function swingShovel(ctx: MatchContext, player: PlayerEntity, column: boolean): void {
+  player.protectedUntil = 0
   const origin = eyePosition(player)
   const dir = viewDirection(player.yaw, player.pitch)
   if (!column) {
@@ -161,6 +172,7 @@ export function swingShovel(ctx: MatchContext, player: PlayerEntity, column: boo
       blockHit.z,
       SHOVEL.blockDamage,
       player,
+      player.config.team,
       blockHit.normal,
     )
   }

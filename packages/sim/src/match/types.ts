@@ -1,6 +1,7 @@
 import type { HitZone, ToolId, WeaponId } from '../combat/weapons.ts'
 import type { Vec3 } from '../physics/sweep.ts'
 import type { BlockId } from '../world/blocks.ts'
+import type { FlagState, MatchState, Winner } from '../rules/ctf.ts'
 
 export type Team = 'blue' | 'red'
 export type DamageSource = ToolId | 'drowning' | 'fall'
@@ -17,6 +18,8 @@ export interface PlayerConfig {
 export interface GameConfig {
   seed: number
   players: PlayerConfig[]
+  // Dev aid: a primary change applies at once instead of at the next respawn.
+  instantLoadout?: boolean
 }
 
 export type GameEvent =
@@ -38,6 +41,15 @@ export type GameEvent =
   | { type: 'explosion'; x: number; y: number; z: number }
   // Trigger pulled on an empty magazine.
   | { type: 'dryfire'; player: number }
+  // `team` is the flag's team; `player` who acted (0 for the 20 s auto return).
+  | {
+      type: 'flag'
+      action: 'taken' | 'dropped' | 'returned' | 'captured'
+      team: Team
+      player: number
+    }
+  | { type: 'matchEnd'; winner: Winner }
+  | { type: 'restock'; player: number }
 
 export interface PlayerSnapshot {
   id: number
@@ -75,6 +87,35 @@ export interface PlayerSnapshot {
   cooking: number
   // Seconds the grenade has been held, for the predicted arc.
   charge: number
+  protected: boolean
+  carrying: boolean
+  kills: number
+  deaths: number
+  captures: number
+  returns: number
+  damageDealt: number
+  // This life: damage given and taken, and who ended it (0 while alive).
+  dealtThisLife: number
+  takenThisLife: number
+  killedBy: number
+  killedWith: DamageSource | ''
+}
+
+export interface FlagSnapshot {
+  team: Team
+  state: FlagState
+  pos: Vec3
+  home: Vec3
+  carrier: number
+}
+
+export interface MatchSnapshot {
+  state: MatchState
+  scoreBlue: number
+  scoreRed: number
+  timeLeft: number
+  winner: Winner | null
+  mvp: number | null
 }
 
 export interface GrenadeSnapshot {
@@ -86,4 +127,6 @@ export interface Snapshot {
   tick: number
   players: PlayerSnapshot[]
   grenades: GrenadeSnapshot[]
+  flags: FlagSnapshot[]
+  match: MatchSnapshot
 }

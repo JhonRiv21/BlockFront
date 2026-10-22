@@ -1,4 +1,6 @@
 import type { WeaponId } from '@blockfront/sim/combat/weapons'
+import type { DamageSource, Team } from '@blockfront/sim/game'
+import type { FlagState, MatchState, Winner } from '@blockfront/sim/rules/ctf'
 
 export interface KillFeedEntry {
   id: number
@@ -8,6 +10,32 @@ export interface KillFeedEntry {
   // Weapon id or cause (drowning, fall); the HUD translates it.
   tool: string
   until: number
+  // Flag lines: who and what happened to which flag; attacker/victim/tool unused.
+  flag?: {
+    action: 'taken' | 'dropped' | 'returned' | 'captured' | 'autoReturned'
+    team: Team
+    name: string
+  }
+}
+
+export interface CompassMarker {
+  team: Team
+  state: FlagState
+  // -1 left edge .. 1 right edge of the strip.
+  offset: number
+  distance: number
+}
+
+export interface ScoreRow {
+  id: number
+  name: string
+  team: Team
+  kills: number
+  deaths: number
+  captures: number
+  returns: number
+  damage: number
+  alive: boolean
 }
 
 export interface DamageIndicator {
@@ -84,6 +112,24 @@ class HudState {
   yaw = $state(0)
   scoreBlue = $state(0)
   scoreRed = $state(0)
+  matchState = $state<MatchState>('playing')
+  timeLeft = $state(600)
+  winner = $state<Winner | null>(null)
+  mvp = $state<number | null>(null)
+  localId = $state(1)
+  localTeam = $state<Team>('blue')
+  // Own flag status and the compass markers toward both flags.
+  ownFlag = $state<FlagState>('base')
+  compass = $state<CompassMarker[]>([])
+  carrying = $state(false)
+  protected = $state(false)
+  showScoreboard = $state(false)
+  rows = $state<ScoreRow[]>([])
+  // Last death: who, with what, and the damage of that life.
+  killedBy = $state('')
+  killedWith = $state<DamageSource | ''>('')
+  dealtThisLife = $state(0)
+  takenThisLife = $state(0)
   // Key of the item just selected (rifle, pistol, shovel, blocks, grenade...), shown over the
   // hotbar for 2 s.
   itemName = $state('')
@@ -99,6 +145,7 @@ class HudState {
   selectPrimary: (weapon: WeaponId) => void = () => {}
   startMatch: (primary: WeaponId) => void = () => {}
   quitMatch: () => void = () => {}
+  playAgain: () => void = () => {}
 }
 
 export const hudState = new HudState()

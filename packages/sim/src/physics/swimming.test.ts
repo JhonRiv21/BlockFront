@@ -62,10 +62,43 @@ describe('swimming', () => {
     expect(player.eyeInWater).toBe(false)
   })
 
-  it('swims slower than it walks and cannot sprint', () => {
-    const swim = run(floor, pool, { ...idle, forward: 1, sprint: true }, 60, [0.5, 1, 0.5])
+  it('wades at about 2.2 blocks/s without sprint', () => {
+    const swim = run(floor, pool, { ...idle, forward: 1 }, 60, [0.5, 1, 0.5])
     expect(0.5 - swim.pos[2]).toBeLessThan(2.4 * 2)
     expect(0.5 - swim.pos[2]).toBeGreaterThan(1.6 * 2)
+  })
+
+  // Minecraft 1.13 sprint-swimming: sprint + forward glides at ~5.6 blocks/s along the gaze.
+  it('sprint-swims at about 5.6 blocks/s and holds the surface with a level gaze', () => {
+    const swim = run(floor, pool, { ...idle, forward: 1, sprint: true }, 60, [0.5, 3.6, 0.5])
+    expect(0.5 - swim.pos[2]).toBeGreaterThan(4.6 * 2)
+    expect(0.5 - swim.pos[2]).toBeLessThan(6 * 2)
+    expect(swim.pos[1]).toBeGreaterThan(3.3)
+    expect(swim.inWater).toBe(true)
+  })
+
+  it('looking down while sprint-swimming dives, looking up surfaces', () => {
+    const dive = run(
+      floor,
+      pool,
+      { ...idle, forward: 1, sprint: true, pitch: -0.8 },
+      30,
+      [0.5, 3.6, 0.5],
+    )
+    expect(dive.pos[1]).toBeLessThan(2)
+    const up = run(
+      floor,
+      pool,
+      { ...idle, forward: 1, sprint: true, pitch: 0.8 },
+      40,
+      [0.5, 0.5, 0.5],
+    )
+    expect(up.pos[1]).toBeGreaterThan(3)
+  })
+
+  it('sprint alone (no forward) does not swim faster', () => {
+    const still = run(floor, pool, { ...idle, sprint: true }, 60, [0.5, 2, 0.5])
+    expect(Math.abs(still.pos[2] - 0.5)).toBeLessThan(0.01)
   })
 
   it('climbs out over a one-block edge when pushing against it', () => {

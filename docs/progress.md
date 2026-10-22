@@ -852,3 +852,63 @@ placeholder.
   cut was the jagged flicker on the hand while moving).
 - Wrist stripes (2026-10-20): the hand cube and the sleeve shared the same 0.1 width and
   overlapped by 2 cm, so their side faces z-fought; the hand is now 0.11 wide like the cuff.
+
+## F3 — Part A: rules and match flow (2026-10-20)
+
+Checks green: typecheck, lint, format, wrangler dry-run, **225 sim tests** (+22) and
+**19 client tests** (+3). No commit.
+
+**HUD split first, behaviour unchanged.** `Hud.svelte` (531 lines) is now a composition of
+`Overlays`, `GameHud`, `PausePanel` and `MainMenu`, with `labels.ts` for the shared label helpers.
+The F3 panels were added as their own components afterwards: `Compass`, `Scoreboard`,
+`DeathScreen` and `MatchEnd`.
+
+**CTF in the sim.** `rules/ctf.ts` holds the constants and the pure rules (match status, waves,
+reach, MVP); `match/ctf-system.ts` runs them on the Game each tick.
+
+- Flags stand on the pole the generator builds at each base (blue z 20.5, red z 171.5). An
+  enemy touching one takes it and it follows them; it drops where the carrier dies and settles on
+  the ground; an ally touching it returns it at once, otherwise it returns after 20 s.
+- A capture needs the own flag at home. Three captures end the match; at 10 minutes the leader
+  wins, a tie goes to 2 minutes of sudden death (next capture wins) and a tie after that is a
+  draw. Once ended the world freezes and the client shows the result over it.
+- Respawn in waves: the next 8 s boundary at least 2 s after the death (so a death one tick
+  before a wave does not come back instantly).
+- In the own base (8 blocks around the flag stand): spawn protection of 4 s that ends when the
+  player fires (any weapon, the shovel or a grenade throw) or steps out; every 15 s hp, blocks,
+  grenades and both guns' ammo refill (`restock` event).
+- Loadout only at spawn: the primary asked for while alive arrives with the next life. The
+  dev build sets `instantLoadout` so the pause panel still applies at once while testing.
+- D3: blocks placed by a team, and the generator's team-coloured base blocks, only break for
+  the enemy. Shots, shovel and grenades of the owning team leave them standing. Consequence:
+  a player cannot dig back a block they placed; natural ground still returns +1.
+- Per-player stats (kills, deaths, captures, returns, damage) and per-life damage dealt and
+  taken plus who ended the life, all in the snapshot. New events: `flag` (taken, dropped,
+  returned, captured), `matchEnd`, `restock`. `Game.removePlayer` drops a carried flag.
+- Names are ids in the config (`you`, `dummy-1`); the HUD translates them.
+
+**Client.** Compass strip under the score with a marker per flag (distance and state, pinned to
+the edge when behind; `compass.ts` with tests), match clock with sudden death in red, "you have
+the flag" and "spawn protection" banners, flag lines in the kill feed, Tab scoreboard per team,
+death screen (killer, weapon, damage dealt and taken this life, next wave, primary for the next
+life), match end with winner, MVP, table, "Play again" (same loadout, fresh match) and "Menu".
+Flags are rendered as a pole with a waving cloth; on another carrier the flag rides on their
+back, the local carrier sees only the banner. Allies get a nameplate with a team glyph (disc for
+blue, diamond for red); an allied carrier also gets a flag marker visible through walls (TF2
+convention). Enemies get neither. A blue dummy stands in the base so the nameplate can be seen.
+
+**Smoke test in a hidden tab.** Flags on their poles, clock at 10:00, two compass markers,
+scoreboard with the four players and translated names, protection banner on spawn, restart to a
+fresh match at tick 0 with the same primary, back to the menu; no console errors.
+
+**Left for later parts.** Bots (C, D), items (B), menu and settings (E). The suicide key agreed
+earlier is not in yet (needs the "respawn at will skips protection" rule).
+
+- Map size (2026-10-20): 96 × 64 × 128 (24 chunks, was 128 × 64 × 192 with 48). Bases 87 blocks
+  apart instead of 151; the river still crosses the middle. Dummies and the menu camera moved
+  with the base centre (x 48).
+- Sprint-swimming (2026-10-20, Minecraft 1.13): sprint + forward with the body at least half
+  under water glides at 5.6 blocks/s along the look direction (pitch steers: down dives, up
+  surfaces); a level gaze holds the swimmer at 62 % submerged instead of sinking; Space and C
+  override up and down. Without sprint the 2.2 blocks/s wading stays. `MoveInput` carries the
+  pitch now. 4 swimming tests rewritten from the new spec (228 sim tests).

@@ -6,6 +6,8 @@ const HITMARKER_MS = 140
 
 export const mountGame: Attachment<HTMLCanvasElement> = (canvas) => {
   let hitmarkerTimer: ReturnType<typeof setTimeout> | undefined
+  // Killer id to its config name; the rows come from the same snapshot as the player.
+  const rowName = (id: number) => hudState.rows.find((row) => row.id === id)?.name ?? `#${id}`
   const renderer = new GameRenderer(canvas, {
     onStats: (stats) => {
       hudState.fps = stats.fps
@@ -59,6 +61,20 @@ export const mountGame: Attachment<HTMLCanvasElement> = (canvas) => {
     onFatal: (fatal) => {
       hudState.fatal = fatal
     },
+    onScoreboard: (shown) => {
+      hudState.showScoreboard = shown
+    },
+    onMatch: ({ match, ownFlag, compass, rows }) => {
+      hudState.scoreBlue = match.scoreBlue
+      hudState.scoreRed = match.scoreRed
+      hudState.matchState = match.state
+      hudState.timeLeft = match.timeLeft
+      hudState.winner = match.winner
+      hudState.mvp = match.mvp
+      hudState.ownFlag = ownFlag
+      hudState.compass = compass
+      hudState.rows = rows
+    },
     onItem: (name) => {
       hudState.itemName = name
       hudState.itemNameAt = performance.now()
@@ -92,6 +108,14 @@ export const mountGame: Attachment<HTMLCanvasElement> = (canvas) => {
       hudState.cooking = player.cooking
       hudState.spread = player.spread
       hudState.ads = player.ads
+      hudState.localId = player.id
+      hudState.localTeam = player.team
+      hudState.carrying = player.carrying
+      hudState.protected = player.protected
+      hudState.killedBy = player.killedBy ? rowName(player.killedBy) : ''
+      hudState.killedWith = player.killedWith
+      hudState.dealtThisLife = player.dealtThisLife
+      hudState.takenThisLife = player.takenThisLife
       hudState.killFeed = killFeed
       hudState.damageIndicators = damageIndicators
       if (hitmarker) {
@@ -110,6 +134,7 @@ export const mountGame: Attachment<HTMLCanvasElement> = (canvas) => {
   }
   hudState.startMatch = (primary) => renderer.startMatch(primary)
   hudState.quitMatch = () => renderer.endMatch()
+  hudState.playAgain = () => renderer.restartMatch()
   renderer.start()
   // Uncaught errors land in a visible log while developing; production keeps the console.
   const logError = (event: ErrorEvent | PromiseRejectionEvent) => {

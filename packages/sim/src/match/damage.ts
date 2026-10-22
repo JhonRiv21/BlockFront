@@ -1,11 +1,10 @@
-import { KNOCKBACK, RESPAWN_SECONDS, type HitZone } from '../combat/weapons.ts'
-import { TICK_RATE } from '../config.ts'
+import { KNOCKBACK, type HitZone } from '../combat/weapons.ts'
+import { nextWaveTick } from '../rules/ctf.ts'
+import { dropFlag } from './ctf-system.ts'
 import type { Vec3 } from '../physics/sweep.ts'
 import type { MatchContext } from './context.ts'
 import type { PlayerEntity } from './entities.ts'
 import type { DamageSource } from './types.ts'
-
-const RESPAWN_TICKS = RESPAWN_SECONDS * TICK_RATE
 
 export function applyDamage(
   ctx: MatchContext,
@@ -16,10 +15,17 @@ export function applyDamage(
   tool: DamageSource,
 ): void {
   if (damage <= 0 || !victim.alive) return
+  // Spawn protection: nothing lands until it expires, is fired away or the base is left.
+  if (ctx.tick < victim.protectedUntil) return
+  const dealt = Math.min(damage, victim.hp)
   victim.hp = Math.max(0, victim.hp - damage)
-  if (attacker !== victim && attacker.config.team !== victim.config.team) {
+  victim.takenThisLife += dealt
+  const enemy = attacker !== victim && attacker.config.team !== victim.config.team
+  if (enemy) {
     victim.lastAttacker = attacker.config.id
     victim.lastAttackedTick = ctx.tick
+    attacker.stats.damage += dealt
+    attacker.dealtThisLife += dealt
   }
   ctx.events.push({
     type: 'hit',
@@ -32,7 +38,12 @@ export function applyDamage(
   if (victim.hp > 0) return
   victim.alive = false
   victim.cooking = -1
-  victim.respawnTick = ctx.tick + RESPAWN_TICKS
+  victim.respawnTick = nextWaveTick(ctx.tick)
+  victim.stats.deaths++
+  victim.killedBy = attacker.config.id
+  victim.killedWith = tool
+  if (enemy) attacker.stats.kills++
+  dropFlag(ctx, victim)
   ctx.events.push({
     type: 'death',
     victim: victim.config.id,

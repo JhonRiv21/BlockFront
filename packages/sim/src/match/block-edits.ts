@@ -7,6 +7,7 @@ import { BLOCK, isCross, type BlockId } from '../world/blocks.ts'
 import { TERRAIN } from '../world/generator.ts'
 import type { MatchContext } from './context.ts'
 import { eyePosition, overlapsBox, viewDirection, type PlayerEntity } from './entities.ts'
+import type { Team } from './types.ts'
 
 function blockKey(x: number, y: number, z: number): number {
   return x + y * WORLD_SIZE.x + z * WORLD_SIZE.x * WORLD_SIZE.y
@@ -14,7 +15,18 @@ function blockKey(x: number, y: number, z: number): number {
 
 export function recordBlock(ctx: MatchContext, x: number, y: number, z: number, id: BlockId): void {
   ctx.blockChanges.set(blockKey(x, y, z), [x, y, z, id])
+  if (id === BLOCK.air) ctx.blockOwners.delete(blockKey(x, y, z))
   ctx.events.push({ type: 'block', x, y, z, id })
+}
+
+// Team a block belongs to: whoever placed it, or the base colour the generator gave it.
+export function blockTeam(ctx: MatchContext, x: number, y: number, z: number): Team | null {
+  const owner = ctx.blockOwners.get(blockKey(x, y, z))
+  if (owner) return owner
+  const id = ctx.world.getBlock(x, y, z)
+  if (id === BLOCK.blue || id === BLOCK.blueLight) return 'blue'
+  if (id === BLOCK.red || id === BLOCK.redLight) return 'red'
+  return null
 }
 
 export function setBlock(
@@ -53,6 +65,7 @@ export function clearDecorAbove(ctx: MatchContext, x: number, y: number, z: numb
   recordBlock(ctx, x, y + 1, z, BLOCK.air)
 }
 
+// `byTeam` is who is hitting: a team's own blocks shrug it off (D3, anti-grief).
 export function damageBlock(
   ctx: MatchContext,
   x: number,
@@ -60,9 +73,11 @@ export function damageBlock(
   z: number,
   amount: number,
   digger: PlayerEntity | null,
+  byTeam: Team | null,
   normal: Vec3 = [0, 1, 0],
 ): void {
   if (ctx.world.getBlock(x, y, z) === BLOCK.air) return
+  if (byTeam !== null && blockTeam(ctx, x, y, z) === byTeam) return
   const broke = ctx.health.damage(x, y, z, amount)
   if (broke) {
     recordBlock(ctx, x, y, z, BLOCK.air)
@@ -93,6 +108,7 @@ export function placeBlock(ctx: MatchContext, player: PlayerEntity): boolean {
     if (other.alive && overlapsBox(playerAabb(other.state), x, y, z)) return false
   }
   player.blocks--
+  ctx.blockOwners.set(blockKey(x, y, z), player.config.team)
   setBlock(ctx, x, y, z, player.blockColor, true)
   return true
 }

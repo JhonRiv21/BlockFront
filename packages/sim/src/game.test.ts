@@ -48,12 +48,13 @@ describe('Game', () => {
     expect(me.onGround).toBe(true)
   })
 
-  it('placing a block spends one and digging it back with the shovel returns it', () => {
+  it('placing a block spends one; own blocks cannot be dug back (D3), natural ground returns one', () => {
     const g = game()
     run(g, frame({}), TICK_RATE)
     const me = () => g.snapshot().players.find((p) => p.id === 1)!
-    // Aim at the ground a block ahead: the block goes on its top face, in front of the feet.
-    const aim = frame({ pitch: -0.9, slot: 4 })
+    // Face away from the base platform (yaw 0 looks at -Z, natural ground): the block goes on
+    // the top face of the ground a block ahead.
+    const aim = frame({ yaw: 0, pitch: -0.9, slot: 4 })
     const placeEvents = run(g, { ...aim, buttons: BUTTON.fire }, 1)
     const placed = placeEvents.find((e) => e.type === 'block')
     expect(placed).toBeDefined()
@@ -62,15 +63,21 @@ describe('Game', () => {
     expect(target!.id).not.toBe(BLOCK.air)
     expect(g.world.getBlock(target!.x, target!.y, target!.z)).toBe(target!.id)
 
-    const shovel = frame({ pitch: -0.9, slot: 3 })
+    // The shovel on the block just placed: a team never breaks its own blocks.
+    const shovel = frame({ yaw: 0, pitch: -0.9, slot: 3 })
     run(g, shovel, 2)
-    const first = [...run(g, { ...shovel, buttons: BUTTON.fire }, 1), ...run(g, shovel, 6)]
-    expect(first.some((e) => e.type === 'blockDamaged')).toBe(true)
+    const own = [...run(g, { ...shovel, buttons: BUTTON.fire }, 1), ...run(g, shovel, 6)]
+    expect(own.some((e) => e.type === 'blockDamaged')).toBe(false)
     expect(g.world.getBlock(target!.x, target!.y, target!.z)).toBe(target!.id)
-    run(g, shovel, 10)
-    const second = [...run(g, { ...shovel, buttons: BUTTON.fire }, 1), ...run(g, shovel, 6)]
+
+    // Straight down at the natural ground under the feet: two hits break it and give +1.
+    const down = frame({ yaw: 0, pitch: -1.4, slot: 3 })
+    run(g, down, 10)
+    const first = [...run(g, { ...down, buttons: BUTTON.fire }, 1), ...run(g, down, 6)]
+    expect(first.some((e) => e.type === 'blockDamaged')).toBe(true)
+    run(g, down, 10)
+    const second = [...run(g, { ...down, buttons: BUTTON.fire }, 1), ...run(g, down, 6)]
     expect(second.some((e) => e.type === 'block' && e.id === BLOCK.air)).toBe(true)
-    expect(g.world.getBlock(target!.x, target!.y, target!.z)).toBe(BLOCK.air)
     expect(me().blocks).toBe(50)
   })
 
@@ -110,8 +117,9 @@ describe('vegetation rules', () => {
     const g = game()
     run(g, frame({}), TICK_RATE)
     const me = g.snapshot().players.find((p) => p.id === 1)!
-    // The block the shovel will hit when looking down ahead, and a plant on top of it.
-    const shovel = frame({ pitch: -0.9, slot: 3 })
+    // The block the shovel will hit when looking down ahead (away from the base platform, which
+    // the own team cannot dig), and a plant on top of it.
+    const shovel = frame({ yaw: 0, pitch: -0.9, slot: 3 })
     const first = [...run(g, { ...shovel, buttons: BUTTON.fire }, 1), ...run(g, shovel, 6)]
     const damaged = first.find((e) => e.type === 'blockDamaged')
     expect(damaged).toBeDefined()
@@ -142,8 +150,8 @@ describe('water rules', () => {
     const g = game()
     // Find a sand block on the river bank under the water level with water beside it.
     let target: [number, number, number] | null = null
-    for (let z = 80; z < 96 && !target; z++)
-      for (let x = 20; x < 60 && !target; x++) {
+    for (let z = 50; z < 64 && !target; z++)
+      for (let x = 10; x < 50 && !target; x++) {
         const id = g.world.getBlock(x, 16, z)
         if (
           id !== BLOCK.air &&
@@ -193,7 +201,7 @@ describe('shovel swing timing (docs/f2-5-polish.md §5.3)', () => {
   it('lands the hit about 0.14 s after the swing starts and spaces swings 0.35 s apart', () => {
     const g = game()
     run(g, frame({}), TICK_RATE)
-    const shovel = frame({ pitch: -0.9, slot: 3 })
+    const shovel = frame({ yaw: 0, pitch: -0.9, slot: 3 })
     const swing = run(g, { ...shovel, buttons: BUTTON.fire }, 1)
     expect(swing.some((e) => e.type === 'shot' && e.tool === 'shovel')).toBe(true)
     expect(swing.some((e) => e.type === 'blockDamaged')).toBe(false)
@@ -218,7 +226,7 @@ describe('shovel swing timing (docs/f2-5-polish.md §5.3)', () => {
   it('carries the face that was hit in the block damage event', () => {
     const g = game()
     run(g, frame({}), TICK_RATE)
-    const shovel = frame({ pitch: -0.9, slot: 3 })
+    const shovel = frame({ yaw: 0, pitch: -0.9, slot: 3 })
     run(g, { ...shovel, buttons: BUTTON.fire }, 1)
     const events = run(g, shovel, 6)
     const hit = events.find((e) => e.type === 'blockDamaged')
@@ -244,7 +252,7 @@ describe('knockback (playtest 2026-10-09)', () => {
       seed: 1,
       players: [
         { id: 1, team: 'blue', name: 'me' },
-        { id: 2, team: 'red', name: 'dummy', dummy: true, spawn: [61, 28] },
+        { id: 2, team: 'red', name: 'dummy', dummy: true, spawn: [45, 28] },
       ],
     })
     run(g, frame({}), TICK_RATE)

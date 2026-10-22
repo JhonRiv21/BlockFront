@@ -20,6 +20,12 @@ export const PLAYER = {
   // Swimming (Minecraft figures are per 20 Hz tick; converted with the dt at use).
   swimSpeedSurface: 2.2,
   swimSpeedSubmerged: 2.0,
+  // Sprint-swimming (Minecraft 1.13): hold sprint and forward to glide along the look direction.
+  swimSprintSpeed: 5.6,
+  swimSprintAccel: 10,
+  // Body share under water a surface swimmer settles at, and how hard it is held there.
+  swimSurfaceDepth: 0.62,
+  swimSurfaceGain: 4,
   waterDrag: 0.8,
   waterGravity: 2.8,
   swimUpAccel: 6.4,
@@ -32,6 +38,8 @@ export interface MoveInput {
   forward: number
   strafe: number
   yaw: number
+  // Look pitch, used only to steer sprint-swimming (0 when absent).
+  pitch?: number
   jump: boolean
   crouch: boolean
   sprint: boolean
@@ -222,20 +230,46 @@ function swim(
     moveX /= length
     moveZ /= length
   }
-  const speed = state.submerged > 0.9 ? PLAYER.swimSpeedSubmerged : PLAYER.swimSpeedSurface
-  const blend = 1 - Math.exp(-PLAYER.waterAccel * dt)
-  state.vel[0] += (moveX * speed - state.vel[0]) * blend
-  state.vel[2] += (moveZ * speed - state.vel[2]) * blend
+  // Sprint-swimming: sprint + forward with the body mostly under water. The player glides
+  // along the look direction, so looking down dives and looking up surfaces; at the surface a
+  // level gaze holds the line instead of sinking.
+  const swimming = input.sprint && input.forward > 0 && state.submerged >= 0.5
+  if (swimming) {
+    const pitch = input.pitch ?? 0
+    const cosPitch = Math.cos(pitch)
+    const blend = 1 - Math.exp(-PLAYER.swimSprintAccel * dt)
+    const targetX = moveX * cosPitch * PLAYER.swimSprintSpeed
+    const targetZ = moveZ * cosPitch * PLAYER.swimSprintSpeed
+    let targetY = Math.sin(pitch) * PLAYER.swimSprintSpeed * Math.min(1, length)
+    if (input.jump) targetY = Math.max(targetY, PLAYER.swimSprintSpeed * 0.5)
+    else if (input.crouch) targetY = Math.min(targetY, -PLAYER.swimSprintSpeed * 0.5)
+    else if (pitch > -0.2 && state.submerged < 0.98)
+      targetY = Math.max(
+        targetY,
+        (state.submerged - PLAYER.swimSurfaceDepth) * PLAYER.swimSurfaceGain,
+      )
+    state.vel[0] += (targetX - state.vel[0]) * blend
+    state.vel[2] += (targetZ - state.vel[2]) * blend
+    state.vel[1] += (targetY - state.vel[1]) * blend
+  } else {
+    const speed = state.submerged > 0.9 ? PLAYER.swimSpeedSubmerged : PLAYER.swimSpeedSurface
+    const blend = 1 - Math.exp(-PLAYER.waterAccel * dt)
+    state.vel[0] += (moveX * speed - state.vel[0]) * blend
+    state.vel[2] += (moveZ * speed - state.vel[2]) * blend
 
-  state.vel[1] -= PLAYER.waterGravity * dt
-  // Holding jump keeps lifting; once the box leaves the water, land gravity brings it back,
-  // which is the bobbing at the surface.
-  if (input.jump) state.vel[1] += PLAYER.swimUpAccel * dt * 2
-  if (input.crouch) state.vel[1] -= PLAYER.crouchSinkAccel * dt
-  // Drag scaled by how much of the body is under water (1 - (1 - ratio)^2).
-  const dragScale = 1 - (1 - state.submerged) * (1 - state.submerged)
-  const drag = Math.pow(PLAYER.waterDrag, dt * 20 * dragScale)
-  state.vel[1] *= drag
+    state.vel[1] -= PLAYER.waterGravity * dt
+    // Holding jump keeps lifting; once the box leaves the water, land gravity brings it back,
+    // which is the bobbing at the surface.
+    if (input.jump) state.vel[1] += PLAYER.swimUpAccel * dt * 2
+    if (input.crouch) state.vel[1] -= PLAYER.crouchSinkAccel * dt
+  }
+  // Drag scaled by how much of the body is under water (1 - (1 - ratio)^2); the sprint swim
+  // already blends toward its target speed.
+  if (!swimming) {
+    const dragScale = 1 - (1 - state.submerged) * (1 - state.submerged)
+    const drag = Math.pow(PLAYER.waterDrag, dt * 20 * dragScale)
+    state.vel[1] *= drag
+  }
 
   const box = playerAabb(state)
   const hit = sweepAabb(isSolid, box, [state.vel[0] * dt, state.vel[1] * dt, state.vel[2] * dt])

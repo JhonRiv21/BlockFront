@@ -1,6 +1,12 @@
 import type { WeaponId } from '@blockfront/sim/combat/weapons'
 import { TICK_SECONDS } from '@blockfront/sim/config'
-import type { GameConfig, GameEvent, PlayerSnapshot, Snapshot } from '@blockfront/sim/game'
+import type {
+  GameConfig,
+  GameEvent,
+  MatchSnapshot,
+  PlayerSnapshot,
+  Snapshot,
+} from '@blockfront/sim/game'
 import type { SolidTest } from '@blockfront/sim/physics/sweep'
 import { raycastVoxels } from '@blockfront/sim/raycast/dda'
 import { FixedStep } from '@blockfront/sim/time/fixed-step'
@@ -32,10 +38,12 @@ import { LocalTransport } from '../net/local-transport.ts'
 import type { Transport } from '../net/transport.ts'
 import type {
   CameraMode,
+  CompassMarker,
   DamageIndicator,
   FatalKind,
   KillFeedEntry,
   Phase,
+  ScoreRow,
 } from '../ui/hud-state.svelte.ts'
 import { AdsView, DEFAULT_FOV } from './ads-view.ts'
 import { BlockHighlight } from './block-highlight.ts'
@@ -52,7 +60,8 @@ import { BlockCracks } from './block-cracks.ts'
 import { ImpactMarks } from './impact-marks.ts'
 import { Tracers } from './tracers.ts'
 import { ShellCasings } from './shell-casings.ts'
-import { t } from '../i18n/locale.svelte.ts'
+import { displayName } from '../ui/labels.ts'
+import { compassOffset } from './compass.ts'
 import { ExplosionFx } from './explosion-fx.ts'
 import { GrenadeArc } from './grenade-arc.ts'
 import { CHARGE, throwSpeed, throwVelocity } from '@blockfront/sim/combat/grenade'
@@ -79,6 +88,13 @@ export interface HudUpdate {
   damageIndicators: DamageIndicator[]
 }
 
+export interface MatchUpdate {
+  match: MatchSnapshot
+  ownFlag: CompassMarker['state']
+  compass: CompassMarker[]
+  rows: ScoreRow[]
+}
+
 export interface RendererCallbacks {
   onStats: (stats: RenderStats) => void
   onPointerLock: (locked: boolean) => void
@@ -98,6 +114,8 @@ export interface RendererCallbacks {
   onLockFailure: (reason: LockFailure) => void
   // null once a lost WebGL context comes back.
   onFatal: (fatal: { kind: FatalKind; message: string } | null) => void
+  onMatch: (update: MatchUpdate) => void
+  onScoreboard: (shown: boolean) => void
 }
 
 const FPS_SAMPLE_MS = 500
@@ -106,12 +124,12 @@ const LOCAL_PLAYER_ID = 1
 const REACH = 5
 const GRENADE_FUSE = 3
 // Where the camera sits while the menu is up: above the river, looking at the blue base.
-const MENU_EYE = new Vector3(64, 46, 128)
-const MENU_LOOK = new Vector3(64, 18, 40)
+const MENU_EYE = new Vector3(48, 42, 92)
+const MENU_LOOK = new Vector3(48, 18, 34)
 // Both on the flat plateau of the blue base, a few blocks past the towers.
 const DUMMY_SPAWNS: [number, number][] = [
-  [61, 28],
-  [67, 30],
+  [45, 28],
+  [51, 30],
 ]
 
 function workerCount(): number {
@@ -119,18 +137,23 @@ function workerCount(): number {
   return Math.max(2, Math.min(4, cores - 1))
 }
 
+// Names are ids the HUD translates ('you', 'dummy-1'); the config carries no localized text.
+// One blue dummy stands in the base so allied nameplates can be seen.
 function matchConfig(seed: number, primary: WeaponId): GameConfig {
   return {
     seed,
+    // The pause panel's weapon selector applies at once only while developing.
+    instantLoadout: import.meta.env.DEV,
     players: [
-      { id: LOCAL_PLAYER_ID, team: 'blue', name: t('player.you'), primary },
+      { id: LOCAL_PLAYER_ID, team: 'blue', name: 'you', primary },
       ...DUMMY_SPAWNS.map((spawn, i) => ({
         id: 10 + i,
         team: 'red' as const,
-        name: t('player.dummy', { n: i + 1 }),
+        name: `dummy-${i + 1}`,
         dummy: true,
         spawn,
       })),
+      { id: 20, team: 'blue', name: 'dummy-3', dummy: true, spawn: [45, 18] },
     ],
   }
 }
@@ -190,6 +213,8 @@ export class GameRenderer {
   private showHitboxes = false
   private showStats = false
   private phase: Phase = 'menu'
+  private lastPrimary: WeaponId = 'rifle'
+  private scoreboardShown = false
   private aimedBlockId = 0
   private lastTime: number | null = null
   private framesInSample = 0
@@ -277,6 +302,7 @@ export class GameRenderer {
       this.worldFlashes,
       this.buffer,
       LOCAL_PLAYER_ID,
+      displayName,
     )
     this.ads = new AdsView(this.camera, this.input, this.sounds, callbacks.onScope)
     this.underwater = new UnderwaterView(
@@ -331,11 +357,19 @@ export class GameRenderer {
   // Match lifecycle. The sim worker starts paused and the pointer lock, which the Play click
   // requests, flips it to running; Esc, P, a hidden tab or a lost lock pause it again.
   startMatch(primary: WeaponId): void {
+    this.lastPrimary = primary
     this.resetMatchState()
     this.transport.start(matchConfig(DEFAULT_SEED, primary), LOCAL_PLAYER_ID)
     this.transport.pause()
     this.setPhase('paused')
     this.input.requestLock()
+  }
+
+  // Same loadout, fresh match.
+  restartMatch(): void {
+    this.transport.stop()
+    this.setPhase('menu')
+    this.startMatch(this.lastPrimary)
   }
 
   endMatch(): void {
@@ -433,6 +467,7 @@ export class GameRenderer {
       renderOnce: () => this.frame(performance.now()),
       explosions: this.explosions,
       startMatch: (primary: WeaponId) => this.startMatch(primary),
+      restartMatch: () => this.restartMatch(),
       endMatch: () => this.endMatch(),
       pause: () => this.pause(),
       resume: () => this.resume(),
@@ -484,6 +519,11 @@ export class GameRenderer {
         this.callbacks.onHitboxes(this.showHitboxes)
       }
     }
+    const scoreboard = this.phase === 'playing' && this.input.isHeld('Tab')
+    if (scoreboard !== this.scoreboardShown) {
+      this.scoreboardShown = scoreboard
+      this.callbacks.onScoreboard(scoreboard)
+    }
     if (this.phase === 'playing') {
       if (this.input.takePressed('KeyP')) this.pause()
       this.controls.readSlot()
@@ -499,7 +539,7 @@ export class GameRenderer {
     if (this.phase === 'menu') this.placeMenuCamera(time)
     else if (this.mode === 'fps') this.placeCamera(alpha)
     else this.flyCamera.update(dt)
-    this.entities.update(alpha, dt, this.showHitboxes)
+    this.entities.update(alpha, dt, this.showHitboxes, time)
     this.updateAimPreview()
     this.updateGrenadeArc()
     this.particles.update(dt)
@@ -622,6 +662,32 @@ export class GameRenderer {
       killFeed: this.feedback.killFeed,
       damageIndicators: this.feedback.damageIndicators,
     })
+    this.callbacks.onMatch(this.matchUpdate(snapshot, me))
+  }
+
+  // Score, clock, compass markers toward both flags and the scoreboard rows.
+  private matchUpdate(snapshot: Snapshot, me: PlayerSnapshot): MatchUpdate {
+    const eye: [number, number, number] = [me.pos[0], me.pos[1] + me.eyeHeight, me.pos[2]]
+    const compass: CompassMarker[] = snapshot.flags.map((flag) => ({
+      team: flag.team,
+      state: flag.state,
+      offset: compassOffset(this.input.yaw, eye, flag.pos),
+      distance: Math.hypot(flag.pos[0] - eye[0], flag.pos[2] - eye[2]),
+    }))
+    const rows: ScoreRow[] = snapshot.players.map((p) => ({
+      id: p.id,
+      name: p.name,
+      team: p.team,
+      kills: p.kills,
+      deaths: p.deaths,
+      captures: p.captures,
+      returns: p.returns,
+      damage: p.damageDealt,
+      alive: p.alive,
+    }))
+    rows.sort((a, b) => b.captures - a.captures || b.kills - a.kills || a.id - b.id)
+    const ownFlag = snapshot.flags.find((f) => f.team === me.team)?.state ?? 'base'
+    return { match: snapshot.match, ownFlag, compass, rows }
   }
 
   // Menu backdrop: a fixed vantage over the map with a slow drift.

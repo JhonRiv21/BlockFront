@@ -22,6 +22,7 @@ import {
 } from 'three'
 import type { AssetStore } from '../assets/asset-store.ts'
 import { useSphericalFog } from './spherical-fog.ts'
+import { buildCarrierMarker, buildNameplate } from './nameplate.ts'
 import { buildWeapon } from './weapon-models.ts'
 
 const TEAM_TINT: Record<Team, string> = { blue: '#9db9ff', red: '#ff9a8c' }
@@ -51,6 +52,9 @@ export class PlayerView {
   private hand: Object3D | null = null
   private heldWeapon: WeaponId | null = null
   private wasAlive = true
+  private nameplate: Sprite | null = null
+  private nameplateFor = ''
+  private carrierMarker: Sprite | null = null
 
   constructor(
     private readonly scene: Scene,
@@ -80,6 +84,35 @@ export class PlayerView {
     void assets.ready.then(() => this.buildModel())
   }
 
+  // Allies get a nameplate (name plus team glyph); an allied flag carrier also gets a marker
+  // that shows through walls. Enemies get neither: finding them is the game.
+  setAlly(name: string | null, carrying: boolean): void {
+    if (name !== null && this.nameplateFor !== name) {
+      this.dropNameplate()
+      this.nameplate = buildNameplate(name, this.team, false)
+      this.nameplateFor = name
+      this.object.add(this.nameplate)
+    } else if (name === null) this.dropNameplate()
+    if (carrying && !this.carrierMarker) {
+      this.carrierMarker = buildCarrierMarker(this.team)
+      this.object.add(this.carrierMarker)
+    } else if (!carrying && this.carrierMarker) {
+      this.object.remove(this.carrierMarker)
+      this.carrierMarker.material.map?.dispose()
+      this.carrierMarker.material.dispose()
+      this.carrierMarker = null
+    }
+  }
+
+  private dropNameplate(): void {
+    if (!this.nameplate) return
+    this.object.remove(this.nameplate)
+    this.nameplate.material.map?.dispose()
+    this.nameplate.material.dispose()
+    this.nameplate = null
+    this.nameplateFor = ''
+  }
+
   update(
     snapshot: PlayerSnapshot,
     x: number,
@@ -104,6 +137,15 @@ export class PlayerView {
       this.holdWeapon(snapshot.slot === 1 ? snapshot.weapon : null)
     }
     this.updateHealthBar(snapshot)
+    const top = (snapshot.crouching ? PLAYER.crouchHeight : PLAYER.height) + 0.35
+    if (this.nameplate) {
+      this.nameplate.visible = snapshot.alive
+      this.nameplate.position.set(0, top + (snapshot.hp < 100 ? 0.3 : 0), 0)
+    }
+    if (this.carrierMarker) {
+      this.carrierMarker.visible = snapshot.alive
+      this.carrierMarker.position.set(0, top + 0.75, 0)
+    }
     this.mixer?.update(dt)
 
     this.hitboxes.visible = showHitboxes
@@ -111,6 +153,7 @@ export class PlayerView {
   }
 
   dispose(): void {
+    this.setAlly(null, false)
     this.scene.remove(this.object)
     this.placeholder?.geometry.dispose()
     this.clearHitboxes()

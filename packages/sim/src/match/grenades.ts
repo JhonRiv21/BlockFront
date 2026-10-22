@@ -5,7 +5,7 @@ import { TICK_SECONDS } from '../config.ts'
 import type { Vec3 } from '../physics/sweep.ts'
 import { raycastVoxels } from '../raycast/dda.ts'
 import { BLOCK } from '../world/blocks.ts'
-import { clearDecorAbove, fillWithWater, recordBlock } from './block-edits.ts'
+import { blockTeam, clearDecorAbove, fillWithWater, recordBlock } from './block-edits.ts'
 import type { MatchContext } from './context.ts'
 import { applyDamage, knockback } from './damage.ts'
 import { bodyCenter, eyePosition, type PlayerEntity } from './entities.ts'
@@ -53,6 +53,7 @@ export function throwGrenade(
   charge: number,
   underhand: boolean,
 ): void {
+  player.protectedUntil = 0
   const vel = throwVelocity(
     player.yaw,
     player.pitch,
@@ -86,7 +87,14 @@ export function stepGrenades(ctx: MatchContext): void {
 
 export function explode(ctx: MatchContext, center: Vec3, owner: PlayerEntity | null): void {
   ctx.events.push({ type: 'explosion', x: center[0], y: center[1], z: center[2] })
-  const broken = explodeBlocks(ctx.world, ctx.health, center, GRENADE.blockRadius)
+  const team = owner?.config.team ?? null
+  const broken = explodeBlocks(
+    ctx.world,
+    ctx.health,
+    center,
+    GRENADE.blockRadius,
+    (x, y, z) => team !== null && blockTeam(ctx, x, y, z) === team,
+  )
   for (const [x, y, z] of broken) {
     recordBlock(ctx, x, y, z, BLOCK.air)
     clearDecorAbove(ctx, x, y, z)

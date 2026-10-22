@@ -172,7 +172,9 @@ function plantTrees(
       const h = hash3(cx, cz, seed)
       const x = cx * TREE_CELL + 1 + (h % (TREE_CELL - 2))
       const z = cz * TREE_CELL + 1 + (Math.floor(h / 8) % (TREE_CELL - 2))
-      if (x >= WORLD_SIZE.x || z >= halfZ) continue
+      // The canopy reaches 2 blocks out: no trunks where it would leave the world or cross
+      // the mirror line.
+      if (x < 2 || x >= WORLD_SIZE.x - 2 || z < 2 || z >= halfZ - 2) continue
       const density = biome(x / 24 + 11.7, z / 24 + 5.3)
       const roll = (Math.floor(h / 64) % 1000) / 1000
       if (roll > TREE_DENSITY * density * 1.6) continue

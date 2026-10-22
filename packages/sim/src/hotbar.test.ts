@@ -42,9 +42,10 @@ describe('hotbar', () => {
     expect(me().pistolMag).toBe(11)
     run(g, frame({ slot: 3 }), 2)
     expect(me().slot).toBe(3)
+    // Dig natural ground (yaw 0 faces away from the base platform, which the team cannot dig).
     const digs = [
-      ...run(g, frame({ slot: 3, pitch: -0.9, buttons: BUTTON.fire }), 1),
-      ...run(g, frame({ slot: 3, pitch: -0.9 }), 6),
+      ...run(g, frame({ slot: 3, yaw: 0, pitch: -0.9, buttons: BUTTON.fire }), 1),
+      ...run(g, frame({ slot: 3, yaw: 0, pitch: -0.9 }), 6),
     ]
     expect(digs.some((e) => e.type === 'blockDamaged')).toBe(true)
     run(g, frame({ slot: 4 }), 2)

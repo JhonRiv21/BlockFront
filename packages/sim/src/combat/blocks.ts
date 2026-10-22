@@ -58,6 +58,7 @@ export function explodeBlocks(
   health: BlockHealth,
   center: Vec3,
   radius: number,
+  spare: (x: number, y: number, z: number) => boolean = () => false,
 ): Vec3[] {
   const broken: Vec3[] = []
   const r = Math.ceil(radius)
@@ -72,7 +73,7 @@ export function explodeBlocks(
         const dz = z + 0.5 - center[2]
         if (dx * dx + dy * dy + dz * dz > radius * radius) continue
         const id = world.getBlock(x, y, z)
-        if (id === BLOCK.air || id === BLOCK.bedrock) continue
+        if (id === BLOCK.air || id === BLOCK.bedrock || spare(x, y, z)) continue
         world.fillBlock(x, y, z, BLOCK.air)
         health.forget(x, y, z)
         broken.push([x, y, z])

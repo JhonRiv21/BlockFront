@@ -20,13 +20,25 @@ import { applyDamage } from './match/damage.ts'
 import { eyePosition, heldGun, viewDirection, type PlayerEntity } from './match/entities.ts'
 import { handleGrenade, stepGrenades, throwGrenade } from './match/grenades.ts'
 import { fireWeapon, spreadOf, swingShovel } from './match/hitscan.ts'
+import { createFlag, dropFlag, isCarrying, stepBase, stepCtf } from './match/ctf-system.ts'
+import {
+  CTF,
+  createMatch,
+  createStats,
+  mvp,
+  secondsLeft,
+  type FlagEntity,
+  type MatchEntity,
+} from './rules/ctf.ts'
 import type { GameConfig, GameEvent, PlayerConfig, Snapshot, Team } from './match/types.ts'
 
 export type {
   DamageSource,
+  FlagSnapshot,
   GameConfig,
   GameEvent,
   GrenadeSnapshot,
+  MatchSnapshot,
   PlayerConfig,
   PlayerSnapshot,
   Snapshot,
@@ -42,6 +54,9 @@ export interface SerializedGame {
   grenades: GrenadeEntity[]
   blockChanges: [number, number, number, BlockId][]
   blockHealth: [number, number][]
+  blockOwners: [number, Team][]
+  flags: Record<Team, FlagEntity>
+  match: MatchEntity
 }
 
 // Plain-data deep copy; the sim has no DOM, so no structuredClone.
@@ -69,6 +84,9 @@ export class Game implements MatchContext {
   readonly isSolid: SolidTest
   readonly isLiquid: LiquidTest
   events: GameEvent[] = []
+  readonly flags: Record<Team, FlagEntity>
+  readonly match: MatchEntity = createMatch()
+  readonly blockOwners = new Map<number, Team>()
 
   constructor(readonly config: GameConfig) {
     this.world = generateWorld(config.seed)
@@ -76,6 +94,7 @@ export class Game implements MatchContext {
     this.health = new BlockHealth(this.world)
     this.isSolid = (x, y, z) => isSolid(this.world.getBlock(x, y, z))
     this.isLiquid = (x, y, z) => isLiquid(this.world.getBlock(x, y, z))
+    this.flags = { blue: createFlag(this.world, 'blue'), red: createFlag(this.world, 'red') }
     for (const playerConfig of config.players) {
       const entity = this.createEntity(playerConfig)
       this.players.set(playerConfig.id, entity)
@@ -94,6 +113,9 @@ export class Game implements MatchContext {
       game.players.set(config.id, clone({ ...data, config }))
     })
     game.grenades = clone(saved.grenades)
+    for (const [key, team] of saved.blockOwners) game.blockOwners.set(key, team)
+    Object.assign(game.flags, clone(saved.flags))
+    Object.assign(game.match, clone(saved.match))
     return game
   }
 
@@ -107,6 +129,9 @@ export class Game implements MatchContext {
       grenades: this.grenades,
       blockChanges: [...this.blockChanges.values()],
       blockHealth: this.health.entries(),
+      blockOwners: [...this.blockOwners.entries()],
+      flags: this.flags,
+      match: this.match,
     })
   }
 
@@ -146,8 +171,37 @@ export class Game implements MatchContext {
         grenades: player.grenades,
         cooking: player.cooking,
         charge: player.charge,
+        protected: this.tick < player.protectedUntil,
+        carrying: isCarrying(this, player),
+        kills: player.stats.kills,
+        deaths: player.stats.deaths,
+        captures: player.stats.captures,
+        returns: player.stats.returns,
+        damageDealt: player.stats.damage,
+        dealtThisLife: player.dealtThisLife,
+        takenThisLife: player.takenThisLife,
+        killedBy: player.killedBy,
+        killedWith: player.killedWith,
       })),
       grenades: this.grenades.map((grenade) => ({ id: grenade.id, pos: [...grenade.pos] as Vec3 })),
+      flags: Object.values(this.flags).map((flag) => ({
+        team: flag.team,
+        state: flag.state,
+        pos: [...flag.pos] as Vec3,
+        home: [...flag.home] as Vec3,
+        carrier: flag.carrier,
+      })),
+      match: {
+        state: this.match.state,
+        scoreBlue: this.match.score.blue,
+        scoreRed: this.match.score.red,
+        timeLeft: secondsLeft(this.match.state, this.tick),
+        winner: this.match.winner,
+        mvp:
+          this.match.state === 'ended'
+            ? mvp([...this.players.values()].map((p) => ({ id: p.config.id, stats: p.stats })))
+            : null,
+      },
     }
   }
 
@@ -160,24 +214,32 @@ export class Game implements MatchContext {
   }
 
   removePlayer(id: number): void {
-    if (!this.players.delete(id)) return
+    const leaver = this.players.get(id)
+    if (!leaver) return
+    dropFlag(this, leaver)
+    this.players.delete(id)
     const index = this.config.players.findIndex((p) => p.id === id)
     if (index !== -1) this.config.players.splice(index, 1)
   }
 
   step(inputs: Map<number, InputFrame>): GameEvent[] {
     this.events = []
+    // The world freezes when the match is over; the client shows the result over it.
+    if (this.match.state === 'ended') return this.events
     this.tick++
     for (const player of this.players.values()) {
       const input = player.config.dummy
         ? player.lastInput
         : (inputs.get(player.config.id) ?? player.lastInput)
+      // A loadout change waits for the next life, except in the dev loadout mode.
+      if (input.primary && input.primary in WEAPONS) player.nextPrimary = input.primary
       if (player.alive) this.stepAlive(player, input)
       else if (this.tick >= player.respawnTick) this.respawn(player)
       player.lastButtons = input.buttons
       player.lastInput = input
     }
     stepGrenades(this)
+    stepCtf(this)
     return this.events
   }
 
@@ -210,6 +272,14 @@ export class Game implements MatchContext {
       air: createAir(),
       lastButtons: 0,
       lastInput: createInputFrame(),
+      nextPrimary: '',
+      protectedUntil: this.tick + CTF.spawnProtectionSeconds * TICK_RATE,
+      lastRestockTick: this.tick,
+      stats: createStats(),
+      dealtThisLife: 0,
+      takenThisLife: 0,
+      killedBy: 0,
+      killedWith: '',
     }
     entity.lastInput.yaw = entity.yaw
     return entity
@@ -224,8 +294,14 @@ export class Game implements MatchContext {
   }
 
   private respawn(player: PlayerEntity): void {
-    const fresh = this.createEntity(player.config)
-    Object.assign(player, fresh, { lastInput: player.lastInput, lastButtons: player.lastButtons })
+    const primary = player.nextPrimary || player.weapon.weapon
+    const fresh = this.createEntity({ ...player.config, primary })
+    Object.assign(player, fresh, {
+      config: player.config,
+      lastInput: player.lastInput,
+      lastButtons: player.lastButtons,
+      stats: player.stats,
+    })
     this.events.push({ type: 'respawn', player: player.config.id })
   }
 
@@ -234,6 +310,7 @@ export class Game implements MatchContext {
       forward: input.forward,
       strafe: input.strafe,
       yaw: input.yaw,
+      pitch: input.pitch,
       jump: hasButton(input, BUTTON.jump),
       crouch: hasButton(input, BUTTON.crouch),
       sprint: hasButton(input, BUTTON.sprint),
@@ -283,10 +360,15 @@ export class Game implements MatchContext {
       player.pistol.reloading = false
       player.ads = 0
     }
-    if (input.primary && input.primary !== player.weapon.weapon && input.primary in WEAPONS) {
-      player.weapon = createWeaponState(input.primary)
+    if (
+      this.config.instantLoadout &&
+      player.nextPrimary &&
+      player.nextPrimary !== player.weapon.weapon
+    ) {
+      player.weapon = createWeaponState(player.nextPrimary)
       player.ads = 0
     }
+    stepBase(this, player)
     if (input.blockColor !== player.blockColor && BUILD_COLORS.includes(input.blockColor)) {
       player.blockColor = input.blockColor
     }

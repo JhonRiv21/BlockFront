@@ -6,6 +6,7 @@ import type { MuzzleFlashes } from './muzzle-flash.ts'
 import { PlayerView } from './player-view.ts'
 import type { SnapshotBuffer } from './snapshot-buffer.ts'
 import { useSphericalFog } from './spherical-fog.ts'
+import { FlagsView } from './flags-view.ts'
 
 const GLINT_ANGLE = (12 * Math.PI) / 180
 
@@ -15,6 +16,7 @@ export class EntitiesView {
   private readonly players = new Map<number, PlayerView>()
   private readonly grenadeMeshes = new Map<number, Mesh>()
   private readonly glints = new Map<number, number>()
+  private readonly flags: FlagsView
 
   constructor(
     private readonly scene: Scene,
@@ -22,11 +24,20 @@ export class EntitiesView {
     private readonly worldFlashes: MuzzleFlashes,
     private readonly buffer: SnapshotBuffer,
     private readonly localId: number,
-  ) {}
+    // Display name for a snapshot name (the config carries ids, not localized text).
+    private readonly displayName: (name: string) => string,
+  ) {
+    this.flags = new FlagsView(scene, localId)
+  }
 
-  update(alpha: number, dt: number, showHitboxes: boolean): void {
+  update(alpha: number, dt: number, showHitboxes: boolean, time: number): void {
     const latest = this.buffer.latest
-    if (!latest) return
+    if (!latest) {
+      this.flags.update([], time)
+      return
+    }
+    this.flags.update(latest.flags, time)
+    const me = latest.players.find((p) => p.id === this.localId)
     for (const player of latest.players) {
       if (player.id === this.localId) continue
       let view = this.players.get(player.id)
@@ -34,6 +45,8 @@ export class EntitiesView {
         view = new PlayerView(this.scene, player.team, this.assets)
         this.players.set(player.id, view)
       }
+      const ally = me !== undefined && player.team === me.team
+      view.setAlly(ally ? this.displayName(player.name) : null, ally && player.carrying)
       const data = this.buffer.interpolated(player.id, alpha)
       if (data) {
         view.update(

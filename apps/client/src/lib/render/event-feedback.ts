@@ -243,6 +243,33 @@ export class EventFeedback {
           d.onDryFire()
         }
         break
+      case 'flag': {
+        const who = snapshot.players.find((p) => p.id === event.player)
+        this.killFeed.push({
+          id: this.nextFeedId++,
+          attacker: '',
+          victim: '',
+          tool: '',
+          until: performance.now() + KILL_FEED_MS,
+          flag: {
+            action: who ? event.action : 'autoReturned',
+            team: event.team,
+            name: who?.name ?? '',
+          },
+        })
+        if (this.killFeed.length > 5) this.killFeed.shift()
+        const mine = event.player === local
+        if (event.action === 'captured') d.sounds.play('hit-head', { volume: mine ? 0.9 : 0.6 })
+        else if (event.action === 'taken' && mine) d.sounds.play('aim-in', { volume: 0.8 })
+        else if (event.action === 'returned' && who) d.sounds.play('aim-out', { volume: 0.6 })
+        break
+      }
+      case 'restock':
+        if (event.player === local) d.sounds.play('block-place', { volume: 0.5, rate: 1.3 })
+        break
+      case 'matchEnd':
+        d.sounds.play('hit-head', { volume: 1 })
+        break
       case 'explosion': {
         const away = distance(eye, event)
         d.explosions.burst(event.x, event.y, event.z)

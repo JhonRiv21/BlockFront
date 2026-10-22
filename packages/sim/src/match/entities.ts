@@ -3,7 +3,9 @@ import type { InputFrame } from '../input.ts'
 import { PLAYER, type PlayerState } from '../physics/player-controller.ts'
 import type { Aabb, Vec3 } from '../physics/sweep.ts'
 import type { AirState } from '../physics/air.ts'
-import type { PlayerConfig } from './types.ts'
+import type { PlayerStats } from '../rules/ctf.ts'
+import type { WeaponId } from '../combat/weapons.ts'
+import type { DamageSource, PlayerConfig } from './types.ts'
 
 export interface PlayerEntity {
   config: PlayerConfig
@@ -34,6 +36,15 @@ export interface PlayerEntity {
   air: AirState
   lastButtons: number
   lastInput: InputFrame
+  // Primary asked for while alive; it arrives with the next respawn.
+  nextPrimary: WeaponId | ''
+  protectedUntil: number
+  lastRestockTick: number
+  stats: PlayerStats
+  dealtThisLife: number
+  takenThisLife: number
+  killedBy: number
+  killedWith: DamageSource | ''
 }
 
 export function viewDirection(yaw: number, pitch: number): Vec3 {

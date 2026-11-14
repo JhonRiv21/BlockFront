@@ -71,6 +71,10 @@ Referencias:
 
 ### Tabla nueva (semiángulo en grados; reemplaza la de `combat/ads.ts` y la dispersión de `weapons.ts`)
 
+> **Ajuste del playtest del 2026-10-09:** las columnas de cadera quedaron ~35 % por debajo de esta
+> tabla (fusil 1,6°, carabina 1,4°, subfusil 0,9°, pistola 0,8°). La fuente de verdad es
+> `packages/sim/src/combat/spread.ts`. Las columnas de ADS siguen exactas.
+
 | Arma | Cadera base | Cadera máx. (+por disparo) | ADS base | ADS máx. (+por disparo) | Retroceso en ADS | Zoom → FOV (base 75) | Tiempo de ADS | Movimiento en ADS |
 |---|---|---|---|---|---|---|---|---|
 | Fusil semi | **2,5** | 4,0 (+0,6) | **0,08** | 0,5 (+0,15) | ×0,6 | **1,5x** | 0,22 s | 70 % |
@@ -279,8 +283,9 @@ agachado sin caer de un borde de 1 bloque pero sí bajando un escalón de 0,5.
 
 ## 6. Ideas nuevas con evidencia
 
-**Aprobadas por Jhon (2026-10-09) para F3-A:** #1 protección al aparecer, #2 TNT, #3 bloque
-reforzado, #4 escalera de mano y #5 botiquín. **No entran a F2.6.** Las #6–#8 quedan descartadas por
+**Aprobadas por Jhon (2026-10-09) para F3-A:** #1 protección al aparecer, #2 TNT, #4 escalera de
+mano y #5 botiquín. **#3 bloque reforzado: descartado el 2026-10-22** (convertía la bandera en un
+búnker). **No entran a F2.6.** Las #6–#8 quedan descartadas por
 ahora.
 
 | # | Idea | Origen | Qué aporta al CTF | Costo | Riesgo y mitigación |

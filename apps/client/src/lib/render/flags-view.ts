@@ -31,7 +31,9 @@ export class FlagsView {
     }
   }
 
+  // Only CTF sends flags; the other modes leave both hidden.
   update(flags: FlagSnapshot[], time: number): void {
+    for (const view of this.flags.values()) view.group.visible = false
     for (const flag of flags) {
       const view = this.flags.get(flag.team)
       if (!view) continue

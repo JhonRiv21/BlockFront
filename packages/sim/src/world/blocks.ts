@@ -1,7 +1,8 @@
 // Block registry (noa-style): one definition per id, compiled into flat tables the mesher and the
 // lighting read without touching objects.
 
-export type RenderKind = 'cube' | 'cross' | 'liquid' | 'none'
+// flat: one quad against the wall the block hangs on (ladders).
+export type RenderKind = 'cube' | 'cross' | 'liquid' | 'flat' | 'none'
 
 export interface BlockDef {
   id: number
@@ -37,14 +38,17 @@ export const LAYER = {
   snow: 15,
   clay: 16,
   planks: 17,
+  tntSide: 18,
+  tntTop: 19,
+  ladder: 20,
 } as const
 
-export const LAYER_COUNT = 18
+export const LAYER_COUNT = 21
 
 // Face order used by FACE_LAYER: +x, -x, +y, -y, +z, -z.
 export const FACE = { east: 0, west: 1, top: 2, bottom: 3, south: 4, north: 5 } as const
 
-export const FLAG = { solid: 1, opaque: 2, liquid: 4, cross: 8, cube: 16 } as const
+export const FLAG = { solid: 1, opaque: 2, liquid: 4, cross: 8, cube: 16, flat: 32 } as const
 
 export const BLOCK = {
   air: 0,
@@ -67,7 +71,28 @@ export const BLOCK = {
   tallGrass: 17,
   flower: 18,
   flowerYellow: 19,
+  // Items of F3-B, above the colour ramp (20–63). A ladder keeps the wall it hangs on in its
+  // id: the suffix is the outward normal of that wall.
+  tnt: 64,
+  ladderEast: 65,
+  ladderWest: 66,
+  ladderSouth: 67,
+  ladderNorth: 68,
 } as const
+
+export const LADDER_NORMAL: Record<number, [number, number, number]> = {
+  [BLOCK.ladderEast]: [1, 0, 0],
+  [BLOCK.ladderWest]: [-1, 0, 0],
+  [BLOCK.ladderSouth]: [0, 0, 1],
+  [BLOCK.ladderNorth]: [0, 0, -1],
+}
+
+export function ladderFor(normal: [number, number, number]): BlockId {
+  if (normal[0] === 1) return BLOCK.ladderEast
+  if (normal[0] === -1) return BLOCK.ladderWest
+  if (normal[2] === 1) return BLOCK.ladderSouth
+  return BLOCK.ladderNorth
+}
 
 export type BlockId = number
 
@@ -106,6 +131,11 @@ function cross(id: number, name: string, layer: number, color: number): BlockDef
     liquid: false,
     color,
   }
+}
+
+// Non-solid, climbable: one quad on the wall it hangs on.
+function flat(id: number, name: string, layer: number, color: number): BlockDef {
+  return { ...cross(id, name, layer, color), render: 'flat' }
 }
 
 function tinted(id: number, name: string, color: number): BlockDef {
@@ -178,6 +208,17 @@ function buildRegistry(): (BlockDef | undefined)[] {
     const hue = ((slot % 22) * 360) / 22
     defs.push(tinted(id, `colour ${slot}`, hslToHex(hue, 0.6, row === 0 ? 0.55 : 0.35)))
   }
+  defs.push(
+    cube(
+      BLOCK.tnt,
+      'tnt',
+      { top: LAYER.tntTop, bottom: LAYER.tntTop, side: LAYER.tntSide },
+      0xc8372d,
+    ),
+    ...[BLOCK.ladderEast, BLOCK.ladderWest, BLOCK.ladderSouth, BLOCK.ladderNorth].map((id) =>
+      flat(id, 'ladder', LAYER.ladder, 0xa3743f),
+    ),
+  )
   const table: (BlockDef | undefined)[] = new Array<BlockDef | undefined>(256).fill(undefined)
   for (const def of defs) table[def.id] = def
   return table
@@ -200,6 +241,7 @@ function compileTables(): { faceLayer: Uint8Array; flags: Uint8Array; palette: n
       (def.opaque ? FLAG.opaque : 0) |
       (def.liquid ? FLAG.liquid : 0) |
       (def.render === 'cross' ? FLAG.cross : 0) |
+      (def.render === 'flat' ? FLAG.flat : 0) |
       (def.render === 'cube' ? FLAG.cube : 0)
   }
   return { faceLayer, flags, palette }
@@ -227,6 +269,10 @@ export function isLiquid(id: BlockId): boolean {
 
 export function isCross(id: BlockId): boolean {
   return ((FLAGS[id] ?? 0) & FLAG.cross) !== 0
+}
+
+export function isLadder(id: BlockId): boolean {
+  return ((FLAGS[id] ?? 0) & FLAG.flat) !== 0
 }
 
 export function renderKind(id: BlockId): RenderKind {

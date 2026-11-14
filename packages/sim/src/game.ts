@@ -3,36 +3,57 @@ import { adsProgress, moveMultiplier } from './combat/ads.ts'
 import type { GrenadeEntity } from './combat/grenade.ts'
 import { FALL, fallDamage } from './physics/fall.ts'
 import { createWeaponState, reloadRemaining, stepWeapon } from './combat/weapon-state.ts'
-import { BLOCKS, GRENADE, PLAYER_HP, SHOVEL, SPRINT_RECOVERY, WEAPONS } from './combat/weapons.ts'
+import {
+  BLOCKS,
+  GRENADE,
+  ITEMS,
+  PLAYER_HP,
+  SHOVEL,
+  SPRINT_RECOVERY,
+  WEAPONS,
+} from './combat/weapons.ts'
 import { TICK_RATE, TICK_SECONDS, WORLD_SIZE } from './config.ts'
 import { BUILD_COLORS, BUTTON, createInputFrame, hasButton, type InputFrame } from './input.ts'
 import { createPlayer, stepPlayer, type MoveInput } from './physics/player-controller.ts'
 import type { SolidTest, Vec3 } from './physics/sweep.ts'
 import { Rng } from './rng.ts'
 import { generateWorld } from './world/generator.ts'
-import { BLOCK, isLiquid, isSolid, type BlockId } from './world/blocks.ts'
+import { BLOCK, isLadder, isLiquid, isSolid, type BlockId } from './world/blocks.ts'
 import { bubbles, createAir, stepAir } from './physics/air.ts'
 import type { LiquidTest } from './physics/water.ts'
 import type { World } from './world/world.ts'
 import { placeBlock, setBlock } from './match/block-edits.ts'
+import { stepTnt, type TntEntity } from './match/explosives.ts'
 import type { MatchContext } from './match/context.ts'
 import { applyDamage } from './match/damage.ts'
 import { eyePosition, heldGun, viewDirection, type PlayerEntity } from './match/entities.ts'
 import { handleGrenade, stepGrenades, throwGrenade } from './match/grenades.ts'
 import { fireWeapon, spreadOf, swingShovel } from './match/hitscan.ts'
 import { createFlag, dropFlag, isCarrying, stepBase, stepCtf } from './match/ctf-system.ts'
+import { createChests, stepChests, type ChestEntity } from './match/chests.ts'
+import { farthestSpawn, ffaSpawnPoints } from './match/placement.ts'
+import { stepScoreMatch } from './match/score-system.ts'
+import {
+  clockLeft,
+  killScore,
+  killsMvp,
+  rosterTeamSize,
+  scoreToWin,
+  type GameMode,
+} from './rules/modes.ts'
 import {
   CTF,
   createMatch,
   createStats,
   mvp,
-  secondsLeft,
   type FlagEntity,
   type MatchEntity,
 } from './rules/ctf.ts'
 import type { GameConfig, GameEvent, PlayerConfig, Snapshot, Team } from './match/types.ts'
+import { BotDirector, type BotDirectorState } from './bots/director.ts'
 
 export type {
+  ChestSnapshot,
   DamageSource,
   FlagSnapshot,
   GameConfig,
@@ -52,11 +73,14 @@ export interface SerializedGame {
   nextGrenadeId: number
   players: Omit<PlayerEntity, 'config'>[]
   grenades: GrenadeEntity[]
+  tnts: TntEntity[]
   blockChanges: [number, number, number, BlockId][]
   blockHealth: [number, number][]
   blockOwners: [number, Team][]
   flags: Record<Team, FlagEntity>
   match: MatchEntity
+  chests: ChestEntity[]
+  bots?: BotDirectorState
 }
 
 // Plain-data deep copy; the sim has no DOM, so no structuredClone.
@@ -64,10 +88,18 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 const TEAM_BLOCK: Record<Team, BlockId> = { blue: BLOCK.blue, red: BLOCK.red }
-const DEFAULT_SPAWN: Record<Team, [number, number]> = {
-  blue: [WORLD_SIZE.x / 2, 17],
-  red: [WORLD_SIZE.x / 2, WORLD_SIZE.z - 1 - 17],
-}
+// Inside the blue base, behind the flag; the red base mirrors them over Z. Teammates take them
+// in config order, so a full team does not spawn stacked.
+const BLUE_SPAWNS: [number, number][] = [
+  [48, 17],
+  [46, 17],
+  [50, 17],
+  [44, 16],
+  [52, 16],
+  [46, 15],
+  [50, 15],
+  [48, 15],
+]
 
 // Authoritative match state: steps at TICK_RATE from one InputFrame per player and emits events.
 // Movement, resources and slot dispatch live here; hitscan, block edits and grenades are the
@@ -80,21 +112,36 @@ export class Game implements MatchContext {
   readonly players = new Map<number, PlayerEntity>()
   grenades: GrenadeEntity[] = []
   nextGrenadeId = 1
+  tnts: TntEntity[] = []
   readonly blockChanges = new Map<number, [number, number, number, BlockId]>()
   readonly isSolid: SolidTest
   readonly isLiquid: LiquidTest
+  readonly isClimbable: LiquidTest
   events: GameEvent[] = []
   readonly flags: Record<Team, FlagEntity>
   readonly match: MatchEntity = createMatch()
   readonly blockOwners = new Map<number, Team>()
+  readonly chests: ChestEntity[]
+  readonly bots: BotDirector
+  readonly scoreToWin: number
+  private ffaSpawns: Vec3[] | null = null
+
+  get mode(): GameMode {
+    return this.config.mode ?? 'ctf'
+  }
 
   constructor(readonly config: GameConfig) {
     this.world = generateWorld(config.seed)
     this.rng = new Rng(config.seed ^ 0x9e3779b9)
     this.health = new BlockHealth(this.world)
+    this.scoreToWin = scoreToWin(this.mode, rosterTeamSize(config.players))
     this.isSolid = (x, y, z) => isSolid(this.world.getBlock(x, y, z))
     this.isLiquid = (x, y, z) => isLiquid(this.world.getBlock(x, y, z))
+    this.isClimbable = (x, y, z) => isLadder(this.world.getBlock(x, y, z))
     this.flags = { blue: createFlag(this.world, 'blue'), red: createFlag(this.world, 'red') }
+    this.chests = createChests(this.world, config.seed, [this.flags.blue.home, this.flags.red.home])
+    if (this.mode === 'ffa') this.ffaSpawns = ffaSpawnPoints(this.world, config.seed)
+    this.bots = new BotDirector(this, config.players)
     for (const playerConfig of config.players) {
       const entity = this.createEntity(playerConfig)
       this.players.set(playerConfig.id, entity)
@@ -113,9 +160,12 @@ export class Game implements MatchContext {
       game.players.set(config.id, clone({ ...data, config }))
     })
     game.grenades = clone(saved.grenades)
+    game.tnts = clone(saved.tnts)
     for (const [key, team] of saved.blockOwners) game.blockOwners.set(key, team)
     Object.assign(game.flags, clone(saved.flags))
     Object.assign(game.match, clone(saved.match))
+    game.chests.splice(0, game.chests.length, ...clone(saved.chests))
+    if (saved.bots) game.bots.restore(clone(saved.bots))
     return game
   }
 
@@ -127,11 +177,14 @@ export class Game implements MatchContext {
       nextGrenadeId: this.nextGrenadeId,
       players: [...this.players.values()].map(({ config: _config, ...rest }) => rest),
       grenades: this.grenades,
+      tnts: this.tnts,
       blockChanges: [...this.blockChanges.values()],
       blockHealth: this.health.entries(),
       blockOwners: [...this.blockOwners.entries()],
       flags: this.flags,
       match: this.match,
+      chests: this.chests,
+      bots: this.bots.serialize(),
     })
   }
 
@@ -149,6 +202,7 @@ export class Game implements MatchContext {
         onGround: player.state.onGround,
         eyeHeight: player.state.eyeHeight,
         inWater: player.state.inWater,
+        onLadder: player.state.onLadder,
         eyeInWater: player.state.eyeInWater,
         air: bubbles(player.air),
         hp: player.hp,
@@ -177,32 +231,49 @@ export class Game implements MatchContext {
         deaths: player.stats.deaths,
         captures: player.stats.captures,
         returns: player.stats.returns,
+        suicides: player.stats.suicides,
+        score: this.mode === 'ctf' ? player.stats.captures : killScore(player.stats),
         damageDealt: player.stats.damage,
         dealtThisLife: player.dealtThisLife,
         takenThisLife: player.takenThisLife,
         killedBy: player.killedBy,
         killedWith: player.killedWith,
+        tnt: player.tnt,
+        ladders: player.ladders,
+        bandages: player.bandages,
+        healing:
+          player.healing < 0 ? 0 : Math.min(1, player.healing / ITEMS.bandage.channelSeconds),
       })),
       grenades: this.grenades.map((grenade) => ({ id: grenade.id, pos: [...grenade.pos] as Vec3 })),
-      flags: Object.values(this.flags).map((flag) => ({
+      flags: (this.mode === 'ctf' ? Object.values(this.flags) : []).map((flag) => ({
         team: flag.team,
         state: flag.state,
         pos: [...flag.pos] as Vec3,
         home: [...flag.home] as Vec3,
         carrier: flag.carrier,
       })),
+      chests: this.chests.map((chest) => ({
+        id: chest.id,
+        pos: [...chest.pos] as Vec3,
+        full: chest.full,
+      })),
       match: {
+        mode: this.mode,
         state: this.match.state,
         scoreBlue: this.match.score.blue,
         scoreRed: this.match.score.red,
-        timeLeft: secondsLeft(this.match.state, this.tick),
+        scoreToWin: this.scoreToWin,
+        timeLeft: clockLeft(this.mode, this.match.state, this.tick),
         winner: this.match.winner,
-        mvp:
-          this.match.state === 'ended'
-            ? mvp([...this.players.values()].map((p) => ({ id: p.config.id, stats: p.stats })))
-            : null,
+        winnerPlayer: this.match.winnerPlayer,
+        mvp: this.match.state === 'ended' ? this.mvp() : null,
       },
     }
+  }
+
+  private mvp(): number | null {
+    const rows = [...this.players.values()].map((p) => ({ id: p.config.id, stats: p.stats }))
+    return this.mode === 'ctf' ? mvp(rows) : killsMvp(rows)
   }
 
   // Players can join and leave mid-match (bots in F3, rooms in F4). A newcomer spawns fresh at
@@ -223,14 +294,17 @@ export class Game implements MatchContext {
   }
 
   step(inputs: Map<number, InputFrame>): GameEvent[] {
+    // Bots hear and see the previous tick: its events are what just happened around them.
+    const heard = this.events
     this.events = []
     // The world freezes when the match is over; the client shows the result over it.
     if (this.match.state === 'ended') return this.events
     this.tick++
+    const botInputs = this.bots.think(this, heard, inputs)
     for (const player of this.players.values()) {
       const input = player.config.dummy
         ? player.lastInput
-        : (inputs.get(player.config.id) ?? player.lastInput)
+        : (inputs.get(player.config.id) ?? botInputs.get(player.config.id) ?? player.lastInput)
       // A loadout change waits for the next life, except in the dev loadout mode.
       if (input.primary && input.primary in WEAPONS) player.nextPrimary = input.primary
       if (player.alive) this.stepAlive(player, input)
@@ -239,21 +313,29 @@ export class Game implements MatchContext {
       player.lastInput = input
     }
     stepGrenades(this)
-    stepCtf(this)
+    stepTnt(this)
+    stepChests(this)
+    if (this.mode === 'ctf') stepCtf(this)
+    else stepScoreMatch(this)
     return this.events
   }
 
   private createEntity(config: PlayerConfig): PlayerEntity {
+    const spawn = this.spawnPoint(config)
     const entity: PlayerEntity = {
       config,
-      state: createPlayer(this.spawnPoint(config)),
-      yaw: config.team === 'blue' ? Math.PI : 0,
+      state: createPlayer(spawn),
+      yaw: this.spawnYaw(config, spawn),
       pitch: 0,
       hp: PLAYER_HP,
       alive: true,
       respawnTick: 0,
       slot: 1,
-      weapon: createWeaponState(config.primary ?? 'rifle'),
+      weapon: createWeaponState(
+        config.primary ??
+          this.bots.initialPrimary(config, this.config.players, this.rng) ??
+          'rifle',
+      ),
       pistol: createWeaponState('pistol'),
       blockColor: TEAM_BLOCK[config.team],
       ads: 0,
@@ -280,13 +362,38 @@ export class Game implements MatchContext {
       takenThisLife: 0,
       killedBy: 0,
       killedWith: '',
+      tnt: ITEMS.tnt.perLife,
+      ladders: ITEMS.ladder.perLife,
+      bandages: ITEMS.bandage.start,
+      healing: -1,
     }
     entity.lastInput.yaw = entity.yaw
     return entity
   }
 
+  // Blue looks toward red and back; in FFA everyone faces the middle of the map.
+  private spawnYaw(config: PlayerConfig, spawn: Vec3): number {
+    if (this.mode !== 'ffa' || config.spawn) return config.team === 'blue' ? Math.PI : 0
+    return Math.atan2(spawn[0] - WORLD_SIZE.x / 2, spawn[2] - WORLD_SIZE.z / 2)
+  }
+
+  // FFA: the point farthest from everyone alive; otherwise a slot in the own base.
   private spawnPoint(config: PlayerConfig): Vec3 {
-    const [x, z] = config.spawn ?? DEFAULT_SPAWN[config.team]
+    if (!config.spawn && this.ffaSpawns) {
+      const others = [...this.players.values()]
+        .filter((p) => p.alive && p.config.id !== config.id)
+        .map((p) => p.state.pos)
+      return [...farthestSpawn(this.ffaSpawns, others)] as Vec3
+    }
+    const mates = this.config.players.filter((p) => p.team === config.team && !p.spawn)
+    const rank = Math.max(
+      0,
+      mates.findIndex((p) => p.id === config.id),
+    )
+    const slot = BLUE_SPAWNS[rank % BLUE_SPAWNS.length]!
+    const [x, z] =
+      config.spawn ??
+      (config.team === 'blue' ? slot : ([slot[0], WORLD_SIZE.z - 1 - slot[1]] as [number, number]))
     for (let y = WORLD_SIZE.y - 1; y >= 0; y--) {
       if (this.world.getBlock(x, y, z) !== BLOCK.air) return [x + 0.5, y + 1, z + 0.5]
     }
@@ -305,6 +412,22 @@ export class Game implements MatchContext {
     this.events.push({ type: 'respawn', player: player.config.id })
   }
 
+  // Bandage: hold fire for a second to heal +40 up to full. Letting go restarts; the flag
+  // carrier and a player at full health cannot start.
+  private channelBandage(player: PlayerEntity, fire: boolean): void {
+    const canHeal = player.bandages > 0 && player.hp < PLAYER_HP && !isCarrying(this, player)
+    if (!fire || !canHeal) {
+      player.healing = -1
+      return
+    }
+    player.healing = Math.max(0, player.healing) + TICK_SECONDS
+    if (player.healing + 1e-6 < ITEMS.bandage.channelSeconds) return
+    player.healing = -1
+    player.bandages--
+    player.hp = Math.min(PLAYER_HP, player.hp + ITEMS.bandage.heal)
+    this.events.push({ type: 'heal', player: player.config.id })
+  }
+
   private stepAlive(player: PlayerEntity, input: InputFrame): void {
     const move: MoveInput = {
       forward: input.forward,
@@ -321,7 +444,7 @@ export class Game implements MatchContext {
     const wantsAim = gun !== null && hasButton(input, BUTTON.alt) && !player.state.inWater
     player.ads = gun ? adsProgress(player.ads, gun, wantsAim, TICK_SECONDS) : 0
     move.speedMultiplier = gun ? moveMultiplier(gun, player.ads) : 1
-    stepPlayer(player.state, move, this.isSolid, TICK_SECONDS, this.isLiquid)
+    stepPlayer(player.state, move, this.isSolid, TICK_SECONDS, this.isLiquid, this.isClimbable)
     if (player.state.landedFrom >= 1) {
       this.events.push({
         type: 'landed',
@@ -347,10 +470,20 @@ export class Game implements MatchContext {
     if (!player.alive) return
 
     const inStock = (slot: number) =>
-      slot === 4 ? player.blocks > 0 : slot === 5 ? player.grenades > 0 : true
+      slot === 4
+        ? player.blocks > 0
+        : slot === 5
+          ? player.grenades > 0
+          : slot === 6
+            ? player.tnt > 0
+            : slot === 7
+              ? player.ladders > 0
+              : slot === 8
+                ? player.bandages > 0
+                : true
     if (
       input.slot >= 1 &&
-      input.slot <= 5 &&
+      input.slot <= 8 &&
       input.slot !== player.slot &&
       player.cooking < 0 &&
       inStock(input.slot)
@@ -359,6 +492,7 @@ export class Game implements MatchContext {
       player.weapon.reloading = false
       player.pistol.reloading = false
       player.ads = 0
+      player.healing = -1
     }
     if (
       this.config.instantLoadout &&
@@ -368,7 +502,8 @@ export class Game implements MatchContext {
       player.weapon = createWeaponState(player.nextPrimary)
       player.ads = 0
     }
-    stepBase(this, player)
+    // FFA has no bases: no restock, and the spawn protection lasts until it runs out or a shot.
+    if (this.mode !== 'ffa') stepBase(this, player)
     if (input.blockColor !== player.blockColor && BUILD_COLORS.includes(input.blockColor)) {
       player.blockColor = input.blockColor
     }
@@ -432,6 +567,24 @@ export class Game implements MatchContext {
         break
       case 5:
         handleGrenade(this, player, fire, firePressed, altPressed)
+        break
+      case 6:
+      case 7: {
+        const kind = player.slot === 6 ? 'tnt' : 'ladder'
+        if (fire && player.placeCooldown <= 1e-6 && placeBlock(this, player, kind)) {
+          player.placeCooldown = BLOCKS.placeInterval
+          this.events.push({
+            type: 'shot',
+            player: player.config.id,
+            tool: kind,
+            origin: eyePosition(player),
+            dir: viewDirection(player.yaw, player.pitch),
+          })
+        }
+        break
+      }
+      case 8:
+        this.channelBandage(player, fire)
         break
     }
     // Out of blocks or grenades: the slot locks and the hand goes back to the primary.

@@ -191,3 +191,27 @@ describe('meshChunk with the block registry', () => {
     for (const y of tops) expect(y).toBeCloseTo(2 + 8 / 9, 5)
   })
 })
+
+// A ladder hangs flat on the wall it was placed against, like Minecraft's: one quad a
+// sixteenth of a block off the wall face, not the two diagonals of a plant.
+describe('ladder decor', () => {
+  it('emits one quad flush with the wall behind a south-facing ladder', () => {
+    const voxels = emptyPadded()
+    voxels[paddedIndex(5, 5, 5)] = BLOCK.ladderSouth
+    const { decor } = meshChunk(voxels)
+    expect(decor.quadCount).toBe(1)
+    const zs = [0, 1, 2, 3].map((i) => decor.positions[i * 3 + 2] ?? NaN)
+    for (const z of zs) expect(z).toBeCloseTo(5 + 1 / 16, 6)
+    const xs = [0, 1, 2, 3].map((i) => decor.positions[i * 3] ?? NaN)
+    expect(Math.min(...xs)).toBe(5)
+    expect(Math.max(...xs)).toBe(6)
+  })
+
+  it('a west-facing ladder sits against the east wall of its cell', () => {
+    const voxels = emptyPadded()
+    voxels[paddedIndex(5, 5, 5)] = BLOCK.ladderWest
+    const { decor } = meshChunk(voxels)
+    expect(decor.quadCount).toBe(1)
+    for (let i = 0; i < 4; i++) expect(decor.positions[i * 3]).toBeCloseTo(6 - 1 / 16, 6)
+  })
+})

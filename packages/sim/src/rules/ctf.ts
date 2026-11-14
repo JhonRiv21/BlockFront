@@ -23,7 +23,8 @@ export const CTF = {
 
 export type FlagState = 'base' | 'carried' | 'dropped'
 export type MatchState = 'playing' | 'suddenDeath' | 'ended'
-export type Winner = Team | 'none'
+// A team, the FFA winner (named by MatchEntity.winnerPlayer) or a draw.
+export type Winner = Team | 'player' | 'none'
 
 export interface FlagEntity {
   team: Team
@@ -38,6 +39,8 @@ export interface MatchEntity {
   state: MatchState
   score: Record<Team, number>
   winner: Winner | null
+  // FFA winner's id; 0 otherwise.
+  winnerPlayer: number
   endTick: number
 }
 
@@ -47,6 +50,8 @@ export interface PlayerStats {
   captures: number
   returns: number
   damage: number
+  // Own deaths: suicide, a fall or drowning with nobody to credit.
+  suicides: number
 }
 
 export function enemyOf(team: Team): Team {
@@ -54,11 +59,17 @@ export function enemyOf(team: Team): Team {
 }
 
 export function createMatch(): MatchEntity {
-  return { state: 'playing', score: { blue: 0, red: 0 }, winner: null, endTick: -1 }
+  return {
+    state: 'playing',
+    score: { blue: 0, red: 0 },
+    winner: null,
+    winnerPlayer: 0,
+    endTick: -1,
+  }
 }
 
 export function createStats(): PlayerStats {
-  return { kills: 0, deaths: 0, captures: 0, returns: 0, damage: 0 }
+  return { kills: 0, deaths: 0, captures: 0, returns: 0, damage: 0, suicides: 0 }
 }
 
 // First wave boundary that is at least minRespawnSeconds after the death.

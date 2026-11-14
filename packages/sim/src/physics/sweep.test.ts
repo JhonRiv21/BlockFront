@@ -128,3 +128,95 @@ describe('sweepAabb at exact corners', () => {
     expect(inside).toBe(false)
   })
 })
+
+// Written from the expected behaviour, before reading the fix: a box on the floor that slid
+// along a wall and past its end walks round the corner, or back, without jumping. Each
+// scenario is built on a local (u, v) plane, u toward the wall and v along it, then mapped
+// onto X or Z with either sign.
+describe('sweepAabb on the floor after sliding along a wall', () => {
+  type Frame = { axis: 'x' | 'z'; sign: 1 | -1 }
+  const frames: Frame[] = [
+    { axis: 'x', sign: 1 },
+    { axis: 'x', sign: -1 },
+    { axis: 'z', sign: 1 },
+    { axis: 'z', sign: -1 },
+  ]
+  const STEP = 0.07
+  const GRAVITY_STEP = -0.005
+
+  // The wall: column u = 10, from v = 0 to v = 4, three blocks high.
+  function world(f: Frame): Solid {
+    return (x, y, z) => {
+      if (y < 0) return true
+      const wu = f.axis === 'x' ? x : z
+      const v = f.axis === 'x' ? z : x
+      const u = f.sign > 0 ? wu : -wu - 1
+      return u === 10 && v >= 0 && v <= 4 && y < 3
+    }
+  }
+
+  function localBox(f: Frame, u: number, v: number): Aabb {
+    const wu = f.sign * u
+    return f.axis === 'x' ? box(wu, 0, v) : box(v, 0, wu)
+  }
+
+  function center(f: Frame, b: Aabb): { u: number; v: number } {
+    const cx = (b.min[0] + b.max[0]) / 2
+    const cz = (b.min[2] + b.max[2]) / 2
+    return f.axis === 'x' ? { u: f.sign * cx, v: cz } : { u: f.sign * cz, v: cx }
+  }
+
+  function walk(f: Frame, b: Aabb, du: number, dv: number, ticks: number) {
+    const wu = f.sign * du * STEP
+    const dv2 = dv * STEP
+    const delta: [number, number, number] =
+      f.axis === 'x' ? [wu, GRAVITY_STEP, dv2] : [dv2, GRAVITY_STEP, wu]
+    for (let i = 0; i < ticks; i++) {
+      sweepAabb(world(f), b, [delta[0], delta[1], delta[2]])
+      expect(b.min[1]).toBe(0)
+    }
+  }
+
+  for (const f of frames) {
+    const name = `${f.sign > 0 ? '+' : '-'}${f.axis.toUpperCase()}`
+
+    it(`rounds the corner pushing diagonally along the wall on ${name}`, () => {
+      const b = localBox(f, 8, 0.5)
+      walk(f, b, 1, 1, 30)
+      expect(center(f, b).u).toBeCloseTo(9.7, 9)
+      walk(f, b, 1, 1, 80)
+      const end = center(f, b)
+      expect(end.v).toBeGreaterThan(5.3)
+      expect(end.u).toBeGreaterThan(10.5)
+    })
+
+    it(`turns into the corner after sliding past the end of the wall on ${name}`, () => {
+      const b = localBox(f, 8, 0.5)
+      walk(f, b, 1, 0, 40)
+      walk(f, b, 0, 1, 80)
+      expect(center(f, b).u).toBeCloseTo(9.7, 9)
+      walk(f, b, 1, 0, 20)
+      expect(center(f, b).u).toBeGreaterThan(10.5)
+    })
+
+    it(`walks back away from the wall after hitting it on ${name}`, () => {
+      const b = localBox(f, 8, 0.5)
+      walk(f, b, 1, 1, 30)
+      const slid = center(f, b).v
+      walk(f, b, -1, 0, 20)
+      expect(center(f, b).u).toBeLessThan(9.7 - 1)
+      walk(f, b, 0, -1, 20)
+      expect(center(f, b).v).toBeLessThan(slid - 1)
+    })
+
+    it(`crosses the boundary it was snapped to by a wall in the other direction on ${name}`, () => {
+      // Snapped flush against the far side of the wall (min u = 11), then the wall is gone
+      // beyond v = 4: walking back across u = 11 there must not catch on the floor.
+      const b = localBox(f, 13, 3.5)
+      walk(f, b, -1, 0, 40)
+      expect(center(f, b).u).toBeCloseTo(11.3, 9)
+      walk(f, b, -1, 1, 40)
+      expect(center(f, b).u).toBeLessThan(11 - 0.5)
+    })
+  }
+})

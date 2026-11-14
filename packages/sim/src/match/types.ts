@@ -2,6 +2,7 @@ import type { HitZone, ToolId, WeaponId } from '../combat/weapons.ts'
 import type { Vec3 } from '../physics/sweep.ts'
 import type { BlockId } from '../world/blocks.ts'
 import type { FlagState, MatchState, Winner } from '../rules/ctf.ts'
+import type { Difficulty, GameMode } from '../rules/modes.ts'
 
 export type Team = 'blue' | 'red'
 export type DamageSource = ToolId | 'drowning' | 'fall'
@@ -10,13 +11,18 @@ export interface PlayerConfig {
   id: number
   team: Team
   name: string
+  // Dev and QA only: stands still and keeps its last input.
   dummy?: boolean
+  // A bot plays through ordinary InputFrames; without one (S1) it stands still.
+  bot?: { difficulty: Difficulty }
   primary?: WeaponId
   spawn?: [number, number]
 }
 
 export interface GameConfig {
   seed: number
+  // Absent means CTF.
+  mode?: GameMode
   players: PlayerConfig[]
   // Dev aid: a primary change applies at once instead of at the next respawn.
   instantLoadout?: boolean
@@ -48,8 +54,12 @@ export type GameEvent =
       team: Team
       player: number
     }
-  | { type: 'matchEnd'; winner: Winner }
+  // `winnerPlayer` names the FFA winner (winner 'player'); 0 otherwise.
+  | { type: 'matchEnd'; winner: Winner; winnerPlayer: number }
   | { type: 'restock'; player: number }
+  | { type: 'heal'; player: number }
+  | { type: 'loot'; player: number; chest: number }
+  | { type: 'chestRefill'; chest: number }
 
 export interface PlayerSnapshot {
   id: number
@@ -62,6 +72,7 @@ export interface PlayerSnapshot {
   onGround: boolean
   eyeHeight: number
   inWater: boolean
+  onLadder: boolean
   eyeInWater: boolean
   air: number
   hp: number
@@ -93,12 +104,20 @@ export interface PlayerSnapshot {
   deaths: number
   captures: number
   returns: number
+  suicides: number
+  // Points toward the win: captures in CTF, kills minus suicides in TDM and FFA.
+  score: number
   damageDealt: number
   // This life: damage given and taken, and who ended it (0 while alive).
   dealtThisLife: number
   takenThisLife: number
   killedBy: number
   killedWith: DamageSource | ''
+  tnt: number
+  ladders: number
+  bandages: number
+  // Bandage channel progress 0..1.
+  healing: number
 }
 
 export interface FlagSnapshot {
@@ -110,12 +129,22 @@ export interface FlagSnapshot {
 }
 
 export interface MatchSnapshot {
+  mode: GameMode
   state: MatchState
+  // Team scores: captures in CTF, kills in TDM; both 0 in FFA (see PlayerSnapshot.score).
   scoreBlue: number
   scoreRed: number
+  scoreToWin: number
   timeLeft: number
   winner: Winner | null
+  winnerPlayer: number
   mvp: number | null
+}
+
+export interface ChestSnapshot {
+  id: number
+  pos: Vec3
+  full: boolean
 }
 
 export interface GrenadeSnapshot {
@@ -127,6 +156,8 @@ export interface Snapshot {
   tick: number
   players: PlayerSnapshot[]
   grenades: GrenadeSnapshot[]
+  // Empty outside CTF.
   flags: FlagSnapshot[]
+  chests: ChestSnapshot[]
   match: MatchSnapshot
 }

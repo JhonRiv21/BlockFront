@@ -1,6 +1,9 @@
 import type { WeaponId } from '@blockfront/sim/combat/weapons'
 import type { DamageSource, Team } from '@blockfront/sim/game'
 import type { FlagState, MatchState, Winner } from '@blockfront/sim/rules/ctf'
+import type { GameMode } from '@blockfront/sim/rules/modes'
+import type { MatchSetup } from '@blockfront/sim/match/setup'
+import type { LootGain } from '../render/loot.ts'
 
 export interface KillFeedEntry {
   id: number
@@ -26,6 +29,13 @@ export interface CompassMarker {
   distance: number
 }
 
+// A full chest within compass range.
+export interface ChestMarker {
+  id: number
+  offset: number
+  distance: number
+}
+
 export interface ScoreRow {
   id: number
   name: string
@@ -34,6 +44,8 @@ export interface ScoreRow {
   deaths: number
   captures: number
   returns: number
+  // Kills minus own deaths in TDM and FFA, captures in CTF.
+  score: number
   damage: number
   alive: boolean
 }
@@ -49,6 +61,7 @@ export type CameraMode = 'fps' | 'fly'
 // menu: no match running. paused: match stopped, pointer free. playing: pointer locked, sim running.
 export type Phase = 'menu' | 'playing' | 'paused'
 export type FatalKind = 'webgl' | 'sim' | 'mesher'
+export type LoadStage = 'terrain' | 'assets' | 'done'
 
 class HudState {
   fps = $state(0)
@@ -60,6 +73,12 @@ class HudState {
   quads = $state(0)
   pointerLocked = $state(false)
   phase = $state<Phase>('menu')
+  // Start-up: the world is meshed (warming the mesher workers), then the assets arrive.
+  loadStage = $state<LoadStage>('terrain')
+  loadProgress = $state(0)
+  settingsOpen = $state(false)
+  // False until the first snapshot of a match: no stale ammo or stock on screen.
+  hasSnapshot = $state(false)
   // Primary chosen in the main menu for the next match.
   menuPrimary = $state<WeaponId>('rifle')
   // Performance overlay, toggled with F3.
@@ -97,6 +116,11 @@ class HudState {
   blocks = $state(50)
   blockColor = $state(11)
   grenades = $state(3)
+  tnt = $state(2)
+  ladders = $state(10)
+  bandages = $state(1)
+  // Bandage channel progress 0..1.
+  healing = $state(0)
   cooking = $state(-1)
   // Cone half-angle in radians; drives the crosshair gap.
   spread = $state(0)
@@ -110,8 +134,12 @@ class HudState {
   damageIndicators = $state<DamageIndicator[]>([])
   // Current view yaw, so damage indicators can be drawn relative to the view.
   yaw = $state(0)
+  matchMode = $state<GameMode>('tdm')
+  // Set from the snapshot; the target depends on the mode and the team size.
+  scoreToWin = $state(0)
   scoreBlue = $state(0)
   scoreRed = $state(0)
+  winnerPlayer = $state(0)
   matchState = $state<MatchState>('playing')
   timeLeft = $state(600)
   winner = $state<Winner | null>(null)
@@ -121,6 +149,10 @@ class HudState {
   // Own flag status and the compass markers toward both flags.
   ownFlag = $state<FlagState>('base')
   compass = $state<CompassMarker[]>([])
+  chestMarkers = $state<ChestMarker[]>([])
+  // What the last chest gave, shown for a moment.
+  loot = $state<LootGain | null>(null)
+  lootAt = $state(-1e9)
   carrying = $state(false)
   protected = $state(false)
   showScoreboard = $state(false)
@@ -143,7 +175,7 @@ class HudState {
   showHpNumber = $state(false)
   // Set by the mount: intentions the panels emit; the renderer carries them out.
   selectPrimary: (weapon: WeaponId) => void = () => {}
-  startMatch: (primary: WeaponId) => void = () => {}
+  startMatch: (setup: MatchSetup) => void = () => {}
   quitMatch: () => void = () => {}
   playAgain: () => void = () => {}
 }

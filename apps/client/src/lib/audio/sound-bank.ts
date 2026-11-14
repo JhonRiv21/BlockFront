@@ -17,12 +17,20 @@ export class SoundBank {
   private readonly voices = new Set<Object3D>()
   private readonly listenerPosition = new Vector3()
   private muted = false
+  // Base level times the player's world volume.
+  private level = 0.6
 
   constructor(
     private readonly scene: Scene,
     private readonly assets: AssetStore,
   ) {
-    this.listener.setMasterVolume(0.6)
+    this.listener.setMasterVolume(this.level)
+  }
+
+  // 0..1 from the settings (general × world).
+  setVolume(volume: number): void {
+    this.level = 0.6 * volume
+    if (!this.muted) this.listener.setMasterVolume(this.level)
   }
 
   resume(): void {
@@ -32,7 +40,7 @@ export class SoundBank {
 
   setMuted(muted: boolean): void {
     this.muted = muted
-    this.listener.setMasterVolume(muted ? 0 : 0.6)
+    this.listener.setMasterVolume(muted ? 0 : this.level)
   }
 
   play(name: SoundName, options: PlayOptions = {}): void {

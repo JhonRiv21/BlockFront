@@ -117,6 +117,57 @@ describe('flags', () => {
     expect(g.tick).toBe(tick)
   })
 
+  it('an ally touching the dropped flag returns it at once and gets the return', () => {
+    const g = game([
+      { id: 3, team: 'red', name: 'raider' },
+      { id: 4, team: 'blue', name: 'mate' },
+    ])
+    run(g, 1)
+    const blueHome = flag(g, 'blue').home
+    teleport(g, 3, blueHome)
+    run(g, 1)
+    teleport(g, 3, [48.5, blueHome[1], 50])
+    run(g, 1)
+    expect(flag(g, 'blue').state).toBe('carried')
+    applyDamage(g, entity(g, 1), entity(g, 3), 1000, 'torso', 'rifle')
+    expect(flag(g, 'blue').state).toBe('dropped')
+    // The teammate (not the player who dropped it, not the flag owner's killer) touches it.
+    teleport(g, 4, flag(g, 'blue').pos)
+    const events = run(g, 1)
+    expect(events.some((e) => e.type === 'flag' && e.action === 'returned' && e.player === 4)).toBe(
+      true,
+    )
+    expect(flag(g, 'blue').state).toBe('base')
+    expect(flag(g, 'blue').pos).toEqual(blueHome)
+    expect(me(g, 4).returns).toBe(1)
+    expect(me(g, 1).returns).toBe(0)
+  })
+
+  it('the carrier dying to a bullet raises the dropped event in that tick', () => {
+    const g = game([{ id: 3, team: 'red', name: 'raider' }])
+    run(g, 1)
+    const blueHome = flag(g, 'blue').home
+    teleport(g, 3, blueHome)
+    run(g, 1)
+    expect(flag(g, 'blue').state).toBe('carried')
+    // Raider stands 4 blocks in front of me (I look toward +z), no protection on either side.
+    teleport(g, 3, [48.5, blueHome[1], 26.5])
+    teleport(g, 1, [48.5, blueHome[1], 22.5])
+    entity(g, 1).protectedUntil = 0
+    entity(g, 3).protectedUntil = 0
+    entity(g, 3).hp = 10
+    const events = run(
+      g,
+      1,
+      new Map([[1, frame({ yaw: Math.PI, pitch: 0, buttons: BUTTON.fire })]]),
+    )
+    expect(events.some((e) => e.type === 'death' && e.victim === 3)).toBe(true)
+    expect(events.some((e) => e.type === 'flag' && e.action === 'dropped' && e.player === 3)).toBe(
+      true,
+    )
+    expect(flag(g, 'blue').state).toBe('dropped')
+  })
+
   it('a dropped flag returns by itself after 20 s', () => {
     const g = game()
     run(g, 1)

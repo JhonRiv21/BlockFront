@@ -1,6 +1,6 @@
 import type { GameConfig } from '@blockfront/sim/game'
 import type { InputFrame } from '@blockfront/sim/input'
-import type { SimRequest, SimResponse } from './sim-messages.ts'
+import type { DevOp, SimRequest, SimResponse } from './sim-messages.ts'
 import type { Transport, UpdateListener } from './transport.ts'
 
 // Runs the Game in a dedicated worker at 30 Hz; the main thread never touches game state.
@@ -52,6 +52,11 @@ export class LocalTransport implements Transport {
 
   resume(): void {
     this.post({ type: 'resume' })
+  }
+
+  // QA mode only; the worker ignores it outside dev builds.
+  dev(op: DevOp): void {
+    this.post({ type: 'dev', op })
   }
 
   sendInput(frame: InputFrame): void {

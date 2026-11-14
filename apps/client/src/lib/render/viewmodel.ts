@@ -19,7 +19,7 @@ import type { AssetStore } from '../assets/asset-store.ts'
 import { BlockArm, easeOutBack, reloadPose, swingPose, WeaponMotion } from './first-person.ts'
 import { MuzzleFlashes } from './muzzle-flash.ts'
 import { buildWeapon, GRIPS, MUZZLE_Y, MUZZLE_Z, SIGHT } from './weapon-models.ts'
-import { GRENADE_ART, SHOVEL_ART } from './sprite-geometry.ts'
+import { BANDAGE_ART, GRENADE_ART, LADDER_ART, SHOVEL_ART, TNT_ART } from './sprite-geometry.ts'
 import { SpriteItem } from './sprite-item.ts'
 
 const REST = new Vector3(0.3, -0.27, -0.55)
@@ -46,7 +46,9 @@ const SHOVEL_GRIP = new Vector3(0, 0, 0.2)
 const BLOCK_GRIP = new Vector3(0, -0.14, 0.02)
 const TEAM_CUFF: Record<Team, string> = { blue: '#2f6fe4', red: '#e03a3a' }
 
-export type Tool = WeaponId | 'shovel' | 'blocks' | 'grenade'
+export type Tool = WeaponId | 'shovel' | 'blocks' | 'grenade' | 'tnt' | 'ladder' | 'bandage'
+// Hand-held pixel sprites; everything that is not a gun or the block cube.
+const SPRITE_TOOLS = new Set<Tool>(['shovel', 'grenade', 'tnt', 'ladder', 'bandage'])
 
 export interface ViewmodelState {
   tool: Tool
@@ -84,8 +86,8 @@ export class Viewmodel {
   private readonly pose = new Vector3()
   private readonly handTarget = new Vector3()
   private readonly handWorld = new Vector3()
-  private current: string | null = null
-  private pending: string | null = null
+  private current: Tool | null = null
+  private pending: Tool | null = null
   private switchPhase: 'none' | 'holster' | 'draw' = 'none'
   private switchT = 0
   private reloadT = 0
@@ -126,6 +128,9 @@ export class Viewmodel {
     // transform, rotation [0, -90, 25], translation [1.13, 3.2, 1.13] px, scale 0.68.
     this.tools.set('shovel', handheld(new SpriteItem(SHOVEL_ART)))
     this.tools.set('grenade', handheld(new SpriteItem(GRENADE_ART)))
+    this.tools.set('tnt', handheld(new SpriteItem(TNT_ART)))
+    this.tools.set('ladder', handheld(new SpriteItem(LADDER_ART)))
+    this.tools.set('bandage', handheld(new SpriteItem(BANDAGE_ART)))
     this.tools.set('blocks', buildBlock(this.blockMaterial))
     this.rightArm = this.buildArm(SHOULDER_RIGHT, team)
     this.leftArm = this.buildArm(SHOULDER_LEFT, team)
@@ -133,12 +138,17 @@ export class Viewmodel {
     void assets.ready.then(() => this.buildModels())
   }
 
+  // Reduce-motion setting: 1 is the full walking bob.
+  setBobScale(scale: number): void {
+    this.motion.bobScale = scale
+  }
+
   setBlockColor(id: number): void {
     this.blockMaterial.color = new Color(PALETTE[id] ?? 0xffffff)
   }
 
-  onShot(weapon: WeaponId | 'shovel'): void {
-    if (weapon === 'shovel') {
+  onShot(weapon: Tool): void {
+    if (!isGun(weapon)) {
       this.swingT = 0
       this.swingAmplitude = 1
       this.swingSeconds = SWING_SECONDS
@@ -191,7 +201,7 @@ export class Viewmodel {
     this.flashes.update(dt)
 
     const gun = this.current && this.current in ADS ? (this.current as WeaponId) : null
-    const sprite = this.current === 'shovel' || this.current === 'grenade'
+    const sprite = this.current !== null && SPRITE_TOOLS.has(this.current)
     const adsPose = gun ? this.adsPoses.get(gun) : undefined
     const rest = gun ? REST : sprite ? HAND_ANCHOR : TOOL_REST
     if (adsPose) this.pose.lerpVectors(rest, adsPose, s)
@@ -394,7 +404,7 @@ export class Viewmodel {
     void this.assets
   }
 
-  private show(name: string): void {
+  private show(name: Tool): void {
     if (this.current === name) return
     for (const child of [...this.holder.children]) this.holder.remove(child)
     const tool = this.tools.get(name)

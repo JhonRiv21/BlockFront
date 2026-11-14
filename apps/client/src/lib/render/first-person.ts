@@ -56,6 +56,8 @@ export class WeaponMotion {
   private sprintBlend = 0
   private lean = 0
   private counterPush = 0
+  // Reduce-motion setting: scales the walking bob.
+  bobScale = 1
   readonly out: MotionOutput = { position: new Vector3(), rotation: new Vector3() }
 
   // Recoil impulses: back 0.03–0.08, pitch 3–8°, yaw ±1°, roll ±2°. Long bursts push less.
@@ -95,7 +97,7 @@ export class WeaponMotion {
     const rate = input.sprinting ? STEPS_SPRINT : STEPS_WALK
     if (moving) this.bobPhase += dt * Math.PI * rate * Math.min(1.2, input.speed / 4.3)
     const amount = moving ? Math.min(1, input.speed / 4.3) * (input.sprinting ? 1.8 : 1) : 0
-    const bobScale = amount * (1 - 0.8 * input.ads)
+    const bobScale = amount * (1 - 0.8 * input.ads) * this.bobScale
     const bobX = BOB_A * Math.sin(this.bobPhase) * bobScale
     const bobY = BOB_B * Math.sin(this.bobPhase * 2) * bobScale
     const bobRoll = BOB_ROLL * Math.sin(this.bobPhase) * bobScale

@@ -59,7 +59,7 @@
 
   {#if !hudState.assetsReady}
     <div
-      class="absolute top-16 left-1/2 -translate-x-1/2 rounded-md bg-hud-panel px-3 py-1 text-xs text-hud-muted"
+      class="absolute top-16 left-1/2 -translate-x-1/2 rounded-md bg-hud-panel px-3 py-1 text-sm text-hud-muted"
     >
       {t('hud.loadingAssets')}
     </div>
@@ -71,8 +71,8 @@
   <div
     class="absolute top-1/2 left-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-3 rounded-lg bg-hud-panel px-8 py-6 text-center"
   >
-    <p class="text-lg font-semibold text-team-red">{t(`error.${hudState.fatal.kind}`)}</p>
-    {#if hudState.fatal.message}<p class="text-xs text-hud-muted">
+    <p class="text-lg font-semibold text-team-red-ink">{t(`error.${hudState.fatal.kind}`)}</p>
+    {#if hudState.fatal.message}<p class="text-sm text-hud-muted">
         {hudState.fatal.message}
       </p>{/if}
     {#if hudState.fatal.kind !== 'webgl'}

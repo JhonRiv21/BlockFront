@@ -8,6 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bots:bench": "node --experimental-transform-types --no-warnings scripts/bots-bench.ts"
   }
 }

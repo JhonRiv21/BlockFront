@@ -116,3 +116,24 @@ describe('stepPlayer never ends inside a block', () => {
     }
   })
 })
+
+// Written from the expected behaviour: a player pushing diagonally along a wall walks round
+// its end without jumping (the floor must never count as a wall across a voxel boundary).
+describe('stepPlayer round the end of a wall', () => {
+  for (const sign of [1, -1] as const) {
+    it(`walks round the corner on ${sign > 0 ? '+' : '-'}X with no jump`, () => {
+      const wallX = sign > 0 ? 10 : -11
+      const solid: Solid = (x, y, z) => y < 0 || (x === wallX && z >= 0 && z <= 4 && y < 3)
+      const player = run(floor, idle, 30, [sign * 8, 0, 0.5])
+      const input = { ...idle, strafe: sign, forward: -1 }
+      let highest = 0
+      for (let i = 0; i < 3 / TICK_SECONDS; i++) {
+        stepPlayer(player, input, solid, TICK_SECONDS)
+        highest = Math.max(highest, player.pos[1])
+      }
+      expect(highest).toBe(0)
+      expect(player.pos[2]).toBeGreaterThan(5.3)
+      expect(sign * player.pos[0]).toBeGreaterThan(10.5)
+    })
+  }
+})

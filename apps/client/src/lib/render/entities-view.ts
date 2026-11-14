@@ -45,7 +45,8 @@ export class EntitiesView {
         view = new PlayerView(this.scene, player.team, this.assets)
         this.players.set(player.id, view)
       }
-      const ally = me !== undefined && player.team === me.team
+      // Nameplates only over allies; FFA has none.
+      const ally = me !== undefined && latest.match.mode !== 'ffa' && player.team === me.team
       view.setAlly(ally ? this.displayName(player.name) : null, ally && player.carrying)
       const data = this.buffer.interpolated(player.id, alpha)
       if (data) {

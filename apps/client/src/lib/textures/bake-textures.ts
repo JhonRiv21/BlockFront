@@ -29,7 +29,12 @@ export function bakeTextures(): Uint8Array {
 }
 
 function isCutout(layer: number): boolean {
-  return layer === LAYER.tallGrass || layer === LAYER.flowerRed || layer === LAYER.flowerYellow
+  return (
+    layer === LAYER.tallGrass ||
+    layer === LAYER.flowerRed ||
+    layer === LAYER.flowerYellow ||
+    layer === LAYER.ladder
+  )
 }
 
 // Deterministic noise in [0, 1) per texel.
@@ -144,6 +149,26 @@ function texel(layer: number, x: number, y: number): Texel {
     case LAYER.planks: {
       const seam = y % 4 === 0 ? 0.8 : 1
       return rgb(mix([150, 112, 68], [172, 132, 82], n).map((c) => c * seam))
+    }
+    case LAYER.tntSide: {
+      // Red with a white band and the letters' dark dots in the middle.
+      if (y >= 6 && y <= 9) {
+        const dark = y >= 7 && y <= 8 && (x === 3 || x === 7 || x === 8 || x === 12)
+        return rgb(dark ? [30, 30, 30] : mix([232, 228, 214], [245, 242, 232], n))
+      }
+      return rgb(mix([190, 48, 38], [214, 62, 50], n))
+    }
+    case LAYER.tntTop:
+      return rgb(
+        (x - 7.5) * (x - 7.5) + (y - 7.5) * (y - 7.5) < 9
+          ? mix([70, 60, 54], [90, 78, 70], n)
+          : mix([190, 48, 38], [214, 62, 50], n),
+      )
+    case LAYER.ladder: {
+      // Two rails and a rung every four texels; the rest is see-through.
+      const rail = x === 3 || x === 4 || x === 11 || x === 12
+      const rung = y % 4 === 1 && x >= 3 && x <= 12
+      return rail || rung ? rgb(mix([150, 108, 60], [172, 126, 72], n2)) : [0, 0, 0, 0]
     }
     default:
       return rgb([255, 0, 255])

@@ -14,6 +14,7 @@ import type { BlockCracks } from './block-cracks.ts'
 import type { BlockParticles } from './block-particles.ts'
 import type { CameraEffects } from './camera-effects.ts'
 import type { ExplosionFx } from './explosion-fx.ts'
+import type { TntFuses } from './tnt-fuse.ts'
 import type { ImpactMarks } from './impact-marks.ts'
 import type { MuzzleFlashes } from './muzzle-flash.ts'
 import type { ShellCasings } from './shell-casings.ts'
@@ -21,6 +22,7 @@ import type { SnapshotBuffer } from './snapshot-buffer.ts'
 import type { Tracers } from './tracers.ts'
 import type { Viewmodel } from './viewmodel.ts'
 import type { WorldView } from './world-view.ts'
+import { lootGain, type LootGain } from './loot.ts'
 
 const KILL_FEED_MS = 6000
 const DAMAGE_INDICATOR_MS = 1200
@@ -46,11 +48,13 @@ export interface FeedbackDeps {
   worldFlashLight: PointLight
   particles: BlockParticles
   explosions: ExplosionFx
+  tntFuses: TntFuses
   cracks: BlockCracks
   marks: ImpactMarks
   currentSlot: () => number
   onDryFire: () => void
   onBlast: (strength: number) => void
+  onLoot: (gain: LootGain) => void
 }
 
 function distance(a: Vec3, b: { x: number; y: number; z: number }): number {
@@ -119,6 +123,11 @@ export class EventFeedback {
           break
         }
         if (event.tool === 'blocks' || event.tool === 'grenade') break
+        if (event.tool === 'tnt' || event.tool === 'ladder') {
+          if (mine) d.viewmodel.onShot(event.tool)
+          break
+        }
+        if (event.tool === 'bandage') break
         // Tracers on every shot, one in three for the automatics.
         const automatic = event.tool === 'smg' || event.tool === 'carbine'
         this.autoShots++
@@ -198,8 +207,19 @@ export class EventFeedback {
           d.viewmodel.onBlockPlaced()
         }
         if (event.id === BLOCK.air) {
+          d.tntFuses.clear(event.x, event.y, event.z)
           d.particles.burst(event.x, event.y, event.z, previousId, 14)
           d.sounds.playVariantAt('block-break', 3, event.x + 0.5, event.y + 0.5, event.z + 0.5)
+        } else if (event.id === BLOCK.tnt) {
+          // Primed the moment it lands: white flashes and the fuse hiss.
+          d.tntFuses.prime(event.x, event.y, event.z)
+          d.guns.fuse(
+            event.x + 0.5,
+            event.y + 0.5,
+            event.z + 0.5,
+            distance(eye, { x: event.x + 0.5, y: event.y + 0.5, z: event.z + 0.5 }),
+            4,
+          )
         } else {
           d.sounds.playAt('block-place', event.x + 0.5, event.y + 0.5, event.z + 0.5, {
             volume: 0.7,
@@ -267,6 +287,25 @@ export class EventFeedback {
       case 'restock':
         if (event.player === local) d.sounds.play('block-place', { volume: 0.5, rate: 1.3 })
         break
+      case 'heal':
+        if (event.player === local) d.sounds.play('aim-in', { volume: 0.9, rate: 0.8 })
+        break
+      case 'loot': {
+        const chest = snapshot.chests.find((c) => c.id === event.chest)
+        if (chest)
+          d.guns.chestOpen(
+            chest.pos[0],
+            chest.pos[1] + 0.5,
+            chest.pos[2],
+            distance(eye, { x: chest.pos[0], y: chest.pos[1] + 0.5, z: chest.pos[2] }),
+          )
+        if (event.player === local) {
+          const after = snapshot.players.find((p) => p.id === local)
+          const before = d.buffer.previous?.players.find((p) => p.id === local) ?? null
+          if (after) d.onLoot(lootGain(before, after))
+        }
+        break
+      }
       case 'matchEnd':
         d.sounds.play('hit-head', { volume: 1 })
         break

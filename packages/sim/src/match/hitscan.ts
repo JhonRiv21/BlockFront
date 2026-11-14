@@ -9,7 +9,9 @@ import type { Rng } from '../rng.ts'
 import { damageBlock } from './block-edits.ts'
 import type { MatchContext } from './context.ts'
 import { applyDamage, knockback } from './damage.ts'
-import { eyePosition, viewDirection, type PlayerEntity } from './entities.ts'
+import { eyePosition, isEnemy, viewDirection, type PlayerEntity } from './entities.ts'
+import { detonateTnt, isTntAt, pickUpTnt } from './explosives.ts'
+import { BLOCK, isLadder } from '../world/blocks.ts'
 
 const BULLET_RANGE = 200
 
@@ -90,7 +92,7 @@ function nearestEnemy(
   let zone: HitZone = 'torso'
   let distance = limit
   for (const other of ctx.players.values()) {
-    if (other === shooter || !other.alive || other.config.team === shooter.config.team) continue
+    if (!other.alive || !isEnemy(ctx.mode, shooter, other)) continue
     const hit = rayHitboxes(
       origin,
       dir,
@@ -127,6 +129,9 @@ function traceBullet(
       dir,
       Math.min(KNOCKBACK.max, KNOCKBACK.min + damage * KNOCKBACK.perDamage),
     )
+  } else if (blockHit && ctx.world.getBlock(blockHit.x, blockHit.y, blockHit.z) === BLOCK.tnt) {
+    if (isTntAt(ctx, blockHit.x, blockHit.y, blockHit.z))
+      detonateTnt(ctx, blockHit.x, blockHit.y, blockHit.z)
   } else if (blockHit && blockDamage > 0) {
     damageBlock(
       ctx,
@@ -160,11 +165,15 @@ export function swingShovel(ctx: MatchContext, player: PlayerEntity, column: boo
       return
     }
   }
-  const blockHit = raycastVoxels(ctx.isSolid, origin, dir, SHOVEL.blockReach)
+  // The shovel also reaches ladders, which bullets and movement pass through.
+  const diggable = (x: number, y: number, z: number) =>
+    ctx.isSolid(x, y, z) || isLadder(ctx.world.getBlock(x, y, z))
+  const blockHit = raycastVoxels(diggable, origin, dir, SHOVEL.blockReach)
   if (!blockHit) return
   const half = Math.floor(SHOVEL.columnSize / 2)
   const rows = column ? [-half, 0, half].filter((o, i, a) => a.indexOf(o) === i) : [0]
   for (const offset of rows) {
+    if (pickUpTnt(ctx, player, blockHit.x, blockHit.y + offset, blockHit.z)) continue
     damageBlock(
       ctx,
       blockHit.x,

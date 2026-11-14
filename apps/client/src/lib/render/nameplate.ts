@@ -12,10 +12,16 @@ export function buildNameplate(name: string, team: Team, through: boolean): Spri
   canvas.height = height
   const context = canvas.getContext('2d')
   if (context) {
-    context.font = 'bold 30px ui-monospace, monospace'
+    const iconSize = 22
+    // Long bot names shrink the font to fit the plate.
+    let fontSize = 30
+    context.font = `bold ${fontSize}px ui-monospace, monospace`
+    while (fontSize > 16 && context.measureText(name).width > width - iconSize - 44) {
+      fontSize -= 2
+      context.font = `bold ${fontSize}px ui-monospace, monospace`
+    }
     context.textBaseline = 'middle'
     const textWidth = context.measureText(name).width
-    const iconSize = 22
     const total = iconSize + 12 + textWidth
     let x = (width - total) / 2
     context.fillStyle = 'rgba(10, 13, 24, 0.6)'

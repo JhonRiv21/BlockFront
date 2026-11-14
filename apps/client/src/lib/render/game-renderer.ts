@@ -1,4 +1,5 @@
 import type { WeaponId } from '@blockfront/sim/combat/weapons'
+import { createGameConfig, type MatchSetup } from '@blockfront/sim/match/setup'
 import { TICK_SECONDS } from '@blockfront/sim/config'
 import type {
   GameConfig,
@@ -38,13 +39,19 @@ import { LocalTransport } from '../net/local-transport.ts'
 import type { Transport } from '../net/transport.ts'
 import type {
   CameraMode,
+  ChestMarker,
   CompassMarker,
   DamageIndicator,
   FatalKind,
   KillFeedEntry,
+  LoadStage,
   Phase,
   ScoreRow,
 } from '../ui/hud-state.svelte.ts'
+import type { Settings } from '../settings/settings.ts'
+import { sortRows } from '../ui/standings.ts'
+import { ChestsView } from './chests-view.ts'
+import type { LootGain } from './loot.ts'
 import { AdsView, DEFAULT_FOV } from './ads-view.ts'
 import { BlockHighlight } from './block-highlight.ts'
 import { BlockParticles } from './block-particles.ts'
@@ -63,6 +70,8 @@ import { ShellCasings } from './shell-casings.ts'
 import { displayName } from '../ui/labels.ts'
 import { compassOffset } from './compass.ts'
 import { ExplosionFx } from './explosion-fx.ts'
+import { TntFuses } from './tnt-fuse.ts'
+import { ITEMS } from '@blockfront/sim/combat/weapons'
 import { GrenadeArc } from './grenade-arc.ts'
 import { CHARGE, throwSpeed, throwVelocity } from '@blockfront/sim/combat/grenade'
 import { MuzzleFlashes } from './muzzle-flash.ts'
@@ -92,6 +101,7 @@ export interface MatchUpdate {
   match: MatchSnapshot
   ownFlag: CompassMarker['state']
   compass: CompassMarker[]
+  chests: ChestMarker[]
   rows: ScoreRow[]
 }
 
@@ -116,6 +126,9 @@ export interface RendererCallbacks {
   onFatal: (fatal: { kind: FatalKind; message: string } | null) => void
   onMatch: (update: MatchUpdate) => void
   onScoreboard: (shown: boolean) => void
+  // Start-up progress 0..1; the menu waits for 'done'.
+  onLoading: (stage: LoadStage, progress: number) => void
+  onLoot: (gain: LootGain) => void
 }
 
 const FPS_SAMPLE_MS = 500
@@ -123,38 +136,27 @@ const DEFAULT_SEED = 1
 const LOCAL_PLAYER_ID = 1
 const REACH = 5
 const GRENADE_FUSE = 3
-// Where the camera sits while the menu is up: above the river, looking at the blue base.
+// Full chests show on the compass within this many blocks.
+const CHEST_COMPASS_RANGE = 40
+// Share of the loading bar taken by meshing the world; the assets fill the rest.
+const TERRAIN_SHARE = 0.85
+// Reduce-motion setting: no camera shake, a quarter of the weapon bob.
+const REDUCED_BOB = 0.25 // Where the camera sits while the menu is up: above the river, looking at the blue base.
 const MENU_EYE = new Vector3(48, 42, 92)
 const MENU_LOOK = new Vector3(48, 18, 34)
-// Both on the flat plateau of the blue base, a few blocks past the towers.
-const DUMMY_SPAWNS: [number, number][] = [
-  [45, 28],
-  [51, 30],
-]
 
 function workerCount(): number {
   const cores = navigator.hardwareConcurrency || 4
   return Math.max(2, Math.min(4, cores - 1))
 }
 
-// Names are ids the HUD translates ('you', 'dummy-1'); the config carries no localized text.
-// One blue dummy stands in the base so allied nameplates can be seen.
-function matchConfig(seed: number, primary: WeaponId): GameConfig {
+// Names are ids the HUD translates ('you', 'bot-2'); the config carries no localized text.
+// Only seed 1 for now: the world is generated once at mount.
+function matchConfig(setup: MatchSetup): GameConfig {
   return {
-    seed,
+    ...createGameConfig({ ...setup, seed: DEFAULT_SEED }),
     // The pause panel's weapon selector applies at once only while developing.
     instantLoadout: import.meta.env.DEV,
-    players: [
-      { id: LOCAL_PLAYER_ID, team: 'blue', name: 'you', primary },
-      ...DUMMY_SPAWNS.map((spawn, i) => ({
-        id: 10 + i,
-        team: 'red' as const,
-        name: `dummy-${i + 1}`,
-        dummy: true,
-        spawn,
-      })),
-      { id: 20, team: 'blue', name: 'dummy-3', dummy: true, spawn: [45, 18] },
-    ],
   }
 }
 
@@ -190,6 +192,7 @@ export class GameRenderer {
   private readonly rayDir = new Vector3()
   private readonly particles: BlockParticles
   private readonly explosions: ExplosionFx
+  private readonly tntFuses: TntFuses
   private readonly effects = new CameraEffects()
   private readonly worldFlashes: MuzzleFlashes
   private readonly worldFlashLight = new PointLight('#ffb366', 0, 8, 2)
@@ -198,6 +201,9 @@ export class GameRenderer {
   private readonly tracers: Tracers
   private readonly casings: ShellCasings
   private readonly grenadeArc: GrenadeArc
+  private readonly chests: ChestsView
+  private terrainReady = false
+  private assetsReady = false
   private readonly viewmodel: Viewmodel
   private readonly buffer = new SnapshotBuffer()
   private readonly entities: EntitiesView
@@ -213,17 +219,26 @@ export class GameRenderer {
   private showHitboxes = false
   private showStats = false
   private phase: Phase = 'menu'
-  private lastPrimary: WeaponId = 'rifle'
+  private lastSetup: MatchSetup | null = null
   private scoreboardShown = false
   private aimedBlockId = 0
   private lastTime: number | null = null
   private framesInSample = 0
   private sampleStart: number | null = null
 
+  // QA mode (dev builds, ?qa=1): no pointer lock needed, no pause on a hidden tab, and the
+  // last events are kept for the QA API.
+  private readonly qa: boolean
+  private readonly recentEvents: { tick: number; event: GameEvent }[] = []
+  // Counts matches on this renderer, so QA can tell one match's events from the next.
+  private matchId = 0
+
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly callbacks: RendererCallbacks,
+    settings: { qa?: boolean } = {},
   ) {
+    this.qa = settings.qa === true
     this.renderer = new WebGLRenderer({
       canvas,
       antialias: true,
@@ -256,7 +271,15 @@ export class GameRenderer {
       decor: createDecorMaterial(options),
     }
     this.worldView = new WorldView(this.scene, this.world, this.pool, this.materials)
-    void this.worldView.rebuildAll()
+    // The first full mesh also warms the mesher workers up; the menu waits for it.
+    void this.worldView
+      .rebuildAll((done, total) => {
+        if (!this.terrainReady) callbacks.onLoading('terrain', (done / total) * TERRAIN_SHARE)
+      })
+      .then(() => {
+        this.terrainReady = true
+        this.reportLoading()
+      })
     this.skylight.onTexture((texture) => {
       for (const material of Object.values(this.materials))
         material.uniforms.skylight!.value = texture
@@ -267,6 +290,7 @@ export class GameRenderer {
     this.guns = new GunAudio(this.sounds.listener.context)
     this.particles = new BlockParticles(this.scene)
     this.explosions = new ExplosionFx(this.scene)
+    this.tntFuses = new TntFuses(this.scene, ITEMS.tnt.fuseSeconds)
     useSphericalFog(this.particles.material)
     this.worldFlashes = new MuzzleFlashes(this.scene)
     // One permanent light whose intensity flashes: adding lights would recompile the shaders.
@@ -277,7 +301,12 @@ export class GameRenderer {
     this.casings = new ShellCasings(this.scene, this.isSolid)
     this.grenadeArc = new GrenadeArc(this.scene, this.isSolid)
     this.viewmodel = new Viewmodel(this.assets, 'blue')
-    void this.assets.ready.then(() => callbacks.onAssetsReady())
+    this.chests = new ChestsView(this.scene)
+    void this.assets.ready.then(() => {
+      this.assetsReady = true
+      callbacks.onAssetsReady()
+      this.reportLoading()
+    })
 
     this.input = new InputState(canvas, (locked) => {
       if (locked) this.sounds.resume()
@@ -287,6 +316,10 @@ export class GameRenderer {
       else if (!locked && this.phase === 'playing') this.pause()
     })
     this.input.onLockFailure = (reason) => callbacks.onLockFailure(reason)
+    this.input.onResumeKey = () => {
+      if (this.phase === 'paused') this.input.requestLock()
+    }
+    this.input.qa = this.qa
     this.pool.onFatal = (message) => this.fatal('mesher', message)
     this.input.yaw = Math.PI
     this.flyCamera = new FlyCamera(this.camera, this.input)
@@ -330,11 +363,13 @@ export class GameRenderer {
       worldFlashLight: this.worldFlashLight,
       particles: this.particles,
       explosions: this.explosions,
+      tntFuses: this.tntFuses,
       cracks: this.cracks,
       marks: this.marks,
       currentSlot: () => this.controls.slot,
       onDryFire: callbacks.onDryFire,
       onBlast: callbacks.onBlast,
+      onLoot: callbacks.onLoot,
     })
 
     this.transport = new LocalTransport()
@@ -354,22 +389,41 @@ export class GameRenderer {
     this.renderer.setAnimationLoop(this.frame)
   }
 
+  private reportLoading(): void {
+    if (this.terrainReady && this.assetsReady) this.callbacks.onLoading('done', 1)
+    else if (this.terrainReady) this.callbacks.onLoading('assets', TERRAIN_SHARE)
+  }
+
+  // Player settings from the panel: look, FOV, audio levels and camera motion.
+  applySettings(settings: Settings): void {
+    this.input.sensitivity = settings.sensitivity
+    this.input.invertY = settings.invertY
+    this.ads.baseFov = settings.fov
+    this.ads.adsSensitivity = settings.adsSensitivity
+    this.guns.setVolumes(settings.volumeMaster, settings.volumeWeapons, settings.volumeWorld)
+    this.sounds.setVolume(settings.volumeMaster * settings.volumeWorld)
+    this.effects.motionScale = settings.reduceMotion ? 0 : 1
+    this.viewmodel.setBobScale(settings.reduceMotion ? REDUCED_BOB : 1)
+  }
+
   // Match lifecycle. The sim worker starts paused and the pointer lock, which the Play click
   // requests, flips it to running; Esc, P, a hidden tab or a lost lock pause it again.
-  startMatch(primary: WeaponId): void {
-    this.lastPrimary = primary
+  startMatch(setup: MatchSetup): void {
+    this.lastSetup = setup
+    this.matchId++
     this.resetMatchState()
-    this.transport.start(matchConfig(DEFAULT_SEED, primary), LOCAL_PLAYER_ID)
+    this.transport.start(matchConfig(setup), LOCAL_PLAYER_ID)
     this.transport.pause()
     this.setPhase('paused')
     this.input.requestLock()
   }
 
-  // Same loadout, fresh match.
+  // Same setup, fresh match.
   restartMatch(): void {
+    if (!this.lastSetup) return
     this.transport.stop()
     this.setPhase('menu')
-    this.startMatch(this.lastPrimary)
+    this.startMatch(this.lastSetup)
   }
 
   endMatch(): void {
@@ -389,6 +443,7 @@ export class GameRenderer {
 
   resume(): void {
     if (this.phase !== 'paused') return
+    this.input.clearAll()
     this.transport.resume()
     this.inputClock.reset()
     this.setPhase('playing')
@@ -396,12 +451,16 @@ export class GameRenderer {
 
   private setPhase(phase: Phase): void {
     this.phase = phase
+    this.input.lockOnClick = phase !== 'menu'
     this.callbacks.onPhase(phase)
   }
 
   private resetMatchState(): void {
+    this.recentEvents.length = 0
+    this.input.clearAll()
     this.buffer.clear()
     this.entities.clear()
+    this.chests.clear()
     this.feedback.reset()
     this.controls.reset()
     this.grenadeArc.hide()
@@ -435,7 +494,7 @@ export class GameRenderer {
   }
 
   private readonly onVisibility = (): void => {
-    if (document.hidden) this.pause()
+    if (document.hidden && !this.qa) this.pause()
   }
 
   // Loadout: one primary at a time, chosen from the HUD panel. Applies immediately for now;
@@ -466,8 +525,15 @@ export class GameRenderer {
       setSlot: (slot: number) => this.controls.selectSlot(slot),
       renderOnce: () => this.frame(performance.now()),
       explosions: this.explosions,
-      startMatch: (primary: WeaponId) => this.startMatch(primary),
+      startMatch: (setup: MatchSetup) => this.startMatch(setup),
       restartMatch: () => this.restartMatch(),
+      controls: this.controls,
+      world: this.world,
+      buffer: this.buffer,
+      recentEvents: this.recentEvents,
+      phase: () => this.phase,
+      chests: this.chests,
+      matchId: () => this.matchId,
       endMatch: () => this.endMatch(),
       pause: () => this.pause(),
       resume: () => this.resume(),
@@ -485,12 +551,14 @@ export class GameRenderer {
     this.highlight.dispose()
     this.particles.dispose()
     this.explosions.dispose()
+    this.tntFuses.dispose()
     this.worldFlashes.dispose()
     this.cracks.dispose()
     this.marks.dispose()
     this.tracers.dispose()
     this.casings.dispose()
     this.grenadeArc.dispose()
+    this.chests.dispose()
     this.viewmodel.dispose()
     this.sounds.dispose()
     this.guns.dispose()
@@ -540,10 +608,12 @@ export class GameRenderer {
     else if (this.mode === 'fps') this.placeCamera(alpha)
     else this.flyCamera.update(dt)
     this.entities.update(alpha, dt, this.showHitboxes, time)
+    this.chests.update(this.buffer.latest?.chests ?? [], dt, time)
     this.updateAimPreview()
     this.updateGrenadeArc()
     this.particles.update(dt)
     this.explosions.update(dt)
+    this.tntFuses.update(dt)
     this.worldFlashes.update(dt)
     this.tracers.update(dt)
     this.casings.update(dt)
@@ -574,15 +644,16 @@ export class GameRenderer {
   }
 
   private heldTool(me: PlayerSnapshot): Tool {
-    return me.slot === 1
-      ? me.weapon
-      : me.slot === 2
-        ? 'pistol'
-        : me.slot === 3
-          ? 'shovel'
-          : me.slot === 4
-            ? 'blocks'
-            : 'grenade'
+    const bySlot: Record<number, Tool> = {
+      2: 'pistol',
+      3: 'shovel',
+      4: 'blocks',
+      5: 'grenade',
+      6: 'tnt',
+      7: 'ladder',
+      8: 'bandage',
+    }
+    return me.slot === 1 ? me.weapon : (bySlot[me.slot] ?? 'grenade')
   }
 
   private viewmodelState(me: PlayerSnapshot, tool: Tool): ViewmodelState {
@@ -649,11 +720,18 @@ export class GameRenderer {
     for (const event of events) {
       if (event.type === 'block') blocksChanged = true
       this.feedback.handle(snapshot, event)
+      if (this.qa) {
+        this.recentEvents.push({ tick: snapshot.tick, event })
+        if (this.recentEvents.length > 400) this.recentEvents.shift()
+      }
     }
     if (blocksChanged) void this.worldView.flushDirty()
     const me = snapshot.players.find((p) => p.id === LOCAL_PLAYER_ID) ?? null
     this.feedback.afterSnapshot(snapshot, me)
     this.entities.updateGlints(snapshot)
+    // The match is over: free the pointer so the result panel's buttons can be clicked.
+    if (snapshot.match.state === 'ended' && this.buffer.previous?.match.state !== 'ended')
+      this.input.releaseLock()
     if (!me) return
     this.controls.followSim(me)
     this.callbacks.onHud({
@@ -674,6 +752,12 @@ export class GameRenderer {
       offset: compassOffset(this.input.yaw, eye, flag.pos),
       distance: Math.hypot(flag.pos[0] - eye[0], flag.pos[2] - eye[2]),
     }))
+    const chests: ChestMarker[] = []
+    for (const chest of snapshot.chests) {
+      const distance = Math.hypot(chest.pos[0] - eye[0], chest.pos[2] - eye[2])
+      if (!chest.full || distance > CHEST_COMPASS_RANGE) continue
+      chests.push({ id: chest.id, offset: compassOffset(this.input.yaw, eye, chest.pos), distance })
+    }
     const rows: ScoreRow[] = snapshot.players.map((p) => ({
       id: p.id,
       name: p.name,
@@ -682,12 +766,18 @@ export class GameRenderer {
       deaths: p.deaths,
       captures: p.captures,
       returns: p.returns,
+      score: p.score,
       damage: p.damageDealt,
       alive: p.alive,
     }))
-    rows.sort((a, b) => b.captures - a.captures || b.kills - a.kills || a.id - b.id)
     const ownFlag = snapshot.flags.find((f) => f.team === me.team)?.state ?? 'base'
-    return { match: snapshot.match, ownFlag, compass, rows }
+    return {
+      match: snapshot.match,
+      ownFlag,
+      compass,
+      chests,
+      rows: sortRows(rows, snapshot.match.mode),
+    }
   }
 
   // Menu backdrop: a fixed vantage over the map with a slow drift.
@@ -745,7 +835,8 @@ export class GameRenderer {
   // Client-side preview of the block the shovel or the block tool will act on.
   private updateAimPreview(): void {
     const slot = this.controls.slot
-    if (this.mode === 'fps' && slot !== 3 && slot !== 4) {
+    const aims = slot === 3 || slot === 4 || slot === 6 || slot === 7
+    if (this.mode === 'fps' && !aims) {
       this.highlight.hide()
       this.aimedBlockId = 0
       return

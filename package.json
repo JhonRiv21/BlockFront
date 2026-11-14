@@ -18,7 +18,9 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "deploy:check": "npm run build && npm run deploy:check -w @blockfront/server"
+    "deploy:check": "npm run build && npm run deploy:check -w @blockfront/server",
+    "check:qa-absent": "node scripts/check-qa-absent.mjs",
+    "bots:bench": "npm run bots:bench -w @blockfront/sim --"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

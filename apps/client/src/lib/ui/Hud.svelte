@@ -8,6 +8,13 @@
   import Overlays from './Overlays.svelte'
   import PausePanel from './PausePanel.svelte'
   import Scoreboard from './Scoreboard.svelte'
+  import SettingsPanel from './SettingsPanel.svelte'
+  import LoadingScreen from './LoadingScreen.svelte'
+  import { settingsState } from '../settings/settings-state.svelte.ts'
+  import { t } from '../i18n/locale.svelte.ts'
+
+  const loaded = $derived(hudState.loadStage === 'done')
+  const settingsShown = $derived(hudState.settingsOpen && hudState.phase !== 'playing')
 </script>
 
 <!-- 9×9 pixel heart: outline, fill and a highlight texel. Drawn once, reused with <use>. -->
@@ -37,7 +44,9 @@
   <Overlays />
   {#if hudState.phase !== 'menu'}
     <GameHud />
-    <Compass />
+    {#if hudState.hasSnapshot}
+      <Compass />
+    {/if}
     {#if !hudState.alive && hudState.matchState !== 'ended'}
       <DeathScreen />
     {/if}
@@ -48,10 +57,23 @@
       <MatchEnd />
     {/if}
   {/if}
-  {#if hudState.phase === 'paused'}
+  {#if hudState.phase === 'paused' && !settingsShown}
     <PausePanel />
   {/if}
-  {#if hudState.phase === 'menu'}
+  {#if hudState.phase === 'menu' && loaded && !settingsShown}
     <MainMenu />
+  {/if}
+  {#if settingsShown}
+    <SettingsPanel />
+  {/if}
+  {#if settingsState.values.showFps && !hudState.showStats}
+    <div
+      class="absolute top-4 right-4 rounded-md bg-hud-panel px-2.5 py-1 text-base font-semibold tabular-nums"
+    >
+      {t('hud.fps', { n: hudState.fps })}
+    </div>
+  {/if}
+  {#if !loaded && hudState.phase === 'menu'}
+    <LoadingScreen />
   {/if}
 </div>

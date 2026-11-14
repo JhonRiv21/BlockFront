@@ -5,6 +5,7 @@ import type { Aabb, Vec3 } from '../physics/sweep.ts'
 import type { AirState } from '../physics/air.ts'
 import type { PlayerStats } from '../rules/ctf.ts'
 import type { WeaponId } from '../combat/weapons.ts'
+import type { GameMode } from '../rules/modes.ts'
 import type { DamageSource, PlayerConfig } from './types.ts'
 
 export interface PlayerEntity {
@@ -45,6 +46,17 @@ export interface PlayerEntity {
   takenThisLife: number
   killedBy: number
   killedWith: DamageSource | ''
+  // F3-B items carried this life.
+  tnt: number
+  ladders: number
+  bandages: number
+  // Seconds the bandage has been channelled; -1 when idle.
+  healing: number
+}
+
+// Friendly fire is off between teammates; in FFA everyone else is an enemy.
+export function isEnemy(mode: GameMode, a: PlayerEntity, b: PlayerEntity): boolean {
+  return a !== b && (mode === 'ffa' || a.config.team !== b.config.team)
 }
 
 export function viewDirection(yaw: number, pitch: number): Vec3 {

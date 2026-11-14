@@ -36,11 +36,15 @@ export class WorldView {
     return total
   }
 
-  rebuildAll(): Promise<void> {
+  // Meshes every chunk; `onProgress` hears each one finish (done of total).
+  rebuildAll(onProgress: (done: number, total: number) => void = () => {}): Promise<void> {
     const jobs: Promise<void>[] = []
+    let done = 0
+    const total = this.world.chunksX * this.world.chunksY * this.world.chunksZ
     for (let cz = 0; cz < this.world.chunksZ; cz++)
       for (let cy = 0; cy < this.world.chunksY; cy++)
-        for (let cx = 0; cx < this.world.chunksX; cx++) jobs.push(this.remesh({ cx, cy, cz }))
+        for (let cx = 0; cx < this.world.chunksX; cx++)
+          jobs.push(this.remesh({ cx, cy, cz }).then(() => onProgress(++done, total)))
     return Promise.all(jobs).then(() => undefined)
   }
 

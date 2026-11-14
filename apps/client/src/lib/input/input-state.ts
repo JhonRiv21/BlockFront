@@ -16,7 +16,17 @@ export class InputState {
   pitch = 0
   // Multiplier on the mouse sensitivity (ADS lowers it with the zoom).
   lookScale = 1
+  // Player settings: sensitivity multiplier and inverted vertical look.
+  sensitivity = 1
+  invertY = false
   onLockFailure: (reason: LockFailure) => void = () => {}
+  // P pressed while the pointer is free (the pause panel is up).
+  onResumeKey: () => void = () => {}
+  // QA mode: behave as locked without a pointer lock, so injected input is accepted.
+  qa = false
+  // A click on the canvas asks for the lock only while a match is up; the menu's backdrop is
+  // not a play button.
+  lockOnClick = false
   private readonly keys = new Latch()
   private readonly buttons = new Latch()
   private mouseDx = 0
@@ -44,7 +54,18 @@ export class InputState {
   }
 
   get locked(): boolean {
-    return document.pointerLockElement === this.element
+    return this.qa || document.pointerLockElement === this.element
+  }
+
+  // Synthetic input for QA, through the same latch as real keys and buttons.
+  injectKey(code: string, down: boolean): void {
+    if (down) this.keys.press(code)
+    else this.keys.release(code)
+  }
+
+  injectMouse(button: number, down: boolean): void {
+    if (down) this.buttons.press(String(button))
+    else this.buttons.release(String(button))
   }
 
   isHeld(code: string): boolean {
@@ -63,6 +84,15 @@ export class InputState {
 
   isMouseHeld(button: number): boolean {
     return this.buttons.isHeld(String(button))
+  }
+
+  // Forget every held key and button, for a match start or a resume.
+  clearAll(): void {
+    this.keys.clear()
+    this.buttons.clear()
+    this.mouseDx = 0
+    this.mouseDy = 0
+    this.wheelSteps = 0
   }
 
   // The input for one sim tick has been built: taps shorter than a tick have been delivered.
@@ -94,25 +124,51 @@ export class InputState {
   // not supported. A click too soon after Esc is retried by itself once the browser's cooldown
   // has passed (the click's activation still counts); only a refusal after that is reported.
   requestLock(retry = true): void {
+    if (this.qa) {
+      this.onLockChange(true)
+      return
+    }
     if (this.locked || this.requesting) return
     const sinceUnlock = performance.now() - this.unlockedAt
     if (sinceUnlock < LOCK_COOLDOWN_MS) {
       this.scheduleRetry(LOCK_COOLDOWN_MS - sinceUnlock)
       return
     }
+    // The request goes out synchronously, inside the click that triggered it: a deferred call
+    // can land outside the user activation and be refused.
+    const failed = () => {
+      this.requesting = false
+      if (retry) this.scheduleRetry(LOCK_COOLDOWN_MS)
+      else this.onLockFailure('rejected')
+    }
+    const settle = (result: unknown, onReject: () => void) => {
+      if (result instanceof Promise) {
+        result.then(
+          () => {
+            this.requesting = false
+          },
+          () => onReject(),
+        )
+      } else this.requesting = false
+    }
     this.requesting = true
-    const plain = () => this.element.requestPointerLock()
-    const withRaw = () => this.element.requestPointerLock({ unadjustedMovement: true })
-    Promise.resolve()
-      .then(withRaw)
-      .catch(plain)
-      .catch(() => {
-        if (retry) this.scheduleRetry(LOCK_COOLDOWN_MS)
-        else this.onLockFailure('rejected')
+    try {
+      settle(this.element.requestPointerLock({ unadjustedMovement: true }), () => {
+        // Raw deltas unsupported or refused: the plain lock, still within the activation window
+        // where the browser allows it.
+        try {
+          settle(this.element.requestPointerLock(), failed)
+        } catch {
+          failed()
+        }
       })
-      .finally(() => {
-        this.requesting = false
-      })
+    } catch {
+      try {
+        settle(this.element.requestPointerLock(), failed)
+      } catch {
+        failed()
+      }
+    }
   }
 
   private scheduleRetry(delayMs: number): void {
@@ -145,7 +201,7 @@ export class InputState {
   }
 
   private readonly onClick = (): void => {
-    this.requestLock()
+    if (this.lockOnClick) this.requestLock()
   }
 
   private readonly onContextMenu = (event: Event): void => {
@@ -169,15 +225,18 @@ export class InputState {
     if (!this.locked) return
     const dx = Math.max(-FLICK_CLAMP, Math.min(FLICK_CLAMP, event.movementX))
     const dy = Math.max(-FLICK_CLAMP, Math.min(FLICK_CLAMP, event.movementY))
-    this.yaw -= dx * LOOK_SENSITIVITY * this.lookScale
-    this.pitch -= dy * LOOK_SENSITIVITY * this.lookScale
+    const scale = LOOK_SENSITIVITY * this.sensitivity * this.lookScale
+    this.yaw -= dx * scale
+    this.pitch -= (this.invertY ? -dy : dy) * scale
     this.mouseDx += dx
     this.mouseDy += dy
     this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch))
   }
 
   private readonly onMouseDown = (event: MouseEvent): void => {
-    if (!this.locked) return
+    // Only clicks on the canvas are game input: a HUD button (Play, Resume, Play again) is not
+    // a trigger pull, in normal play or in QA mode.
+    if (!this.locked || event.target !== this.element) return
     this.buttons.press(String(event.button))
   }
 
@@ -192,7 +251,11 @@ export class InputState {
   }
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
-    if (!this.locked) return
+    if (!this.locked) {
+      // A key press is a user gesture: P can ask for the lock back and so resume.
+      if (event.code === 'KeyP') this.onResumeKey()
+      return
+    }
     if (!event.repeat) this.keys.press(event.code)
     if (event.code === 'Space' || event.code === 'Tab' || event.code === 'F3')
       event.preventDefault()

@@ -1,7 +1,7 @@
 // Single source of balance numbers (PLAN.md §3). Distances in blocks, times in seconds,
 // angles in degrees.
 export type WeaponId = 'rifle' | 'carbine' | 'smg' | 'shotgun' | 'sniper' | 'pistol'
-export type ToolId = WeaponId | 'shovel' | 'blocks' | 'grenade'
+export type ToolId = WeaponId | 'shovel' | 'blocks' | 'grenade' | 'tnt' | 'ladder' | 'bandage'
 export type HitZone = 'head' | 'torso' | 'limbs'
 
 export interface ZoneDamage {
@@ -138,9 +138,34 @@ export const GRENADE = {
   maxDamage: 150,
 } as const
 
+// F3-B items (docs/f2-6-feel.md §6 #2, #4, #5; the reinforced block was dropped on 2026-10-22:
+// a bunker around the flag kills the capture).
+export const ITEMS = {
+  tnt: {
+    perLife: 2,
+    fuseSeconds: 4,
+    blockRadius: 3,
+    damageRadius: 5,
+    maxDamage: 150,
+  },
+  ladder: { perLife: 10, climbSpeed: 2.4, slideSpeed: 1.5, climbWalkFactor: 0.6 },
+  // docs/final-scope.md §3: bandages replaced the medkit on slot 8.
+  bandage: { start: 1, max: 3, heal: 40, channelSeconds: 1 },
+} as const
+
+// Loot chests (docs/final-scope.md §3): what one gives and how long it stays empty. Bandages
+// and grenades stop at their caps (ITEMS.bandage.max, GRENADE.perLife).
+export const CHEST = {
+  count: 10,
+  minFlagDistance: 12,
+  minSpacing: 10,
+  refillSeconds: 30,
+  bandages: 1,
+  grenades: 1,
+} as const
+
 export const PLAYER_HP = 100
 // Knockback on hits: metres per second per point of damage, plus a floor, and the explosion push.
 export const KNOCKBACK = { perDamage: 0.06, min: 1.5, max: 6, up: 1.2, explosion: 9 } as const
 // Seconds after sprinting before the gun can fire again.
 export const SPRINT_RECOVERY = 0.15
-export const RESPAWN_SECONDS = 5

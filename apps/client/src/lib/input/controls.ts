@@ -3,7 +3,7 @@ import type { PlayerSnapshot } from '@blockfront/sim/game'
 import { BUILD_COLORS, BUTTON, type InputFrame } from '@blockfront/sim/input'
 import type { InputState } from './input-state.ts'
 
-const SLOT_COUNT = 5
+const SLOT_COUNT = 8
 
 export interface ControlsHooks {
   // Item just selected, as a key the HUD translates.

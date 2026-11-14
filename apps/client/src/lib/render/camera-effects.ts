@@ -44,6 +44,8 @@ export class CameraEffects {
   private burstShots = 0
   private lastShotAt = -1
   private driftSign = 1
+  // Reduce-motion setting: scales the shake, the hurt roll and the landing dip (not the recoil).
+  motionScale = 1
   pitchOffset = 0
   yawOffset = 0
   shakeX = 0
@@ -111,9 +113,10 @@ export class CameraEffects {
     this.landDip *= Math.exp(-9 * dt)
     this.landTilt *= Math.exp(-6 * dt)
     const t = performance.now() / 1000 + this.shakeSeed
-    this.shakeX = Math.sin(t * 61) * this.shake * 0.12
-    this.shakeY = Math.cos(t * 47) * this.shake * 0.1 - this.landDip
-    this.rollOffset = Math.sin(t * 53) * this.shake * 0.04 + this.hurtRoll + this.landTilt
+    const m = this.motionScale
+    this.shakeX = Math.sin(t * 61) * this.shake * 0.12 * m
+    this.shakeY = (Math.cos(t * 47) * this.shake * 0.1 - this.landDip) * m
+    this.rollOffset = (Math.sin(t * 53) * this.shake * 0.04 + this.hurtRoll + this.landTilt) * m
     this.pitchOffset = this.recoilPitch
     this.yawOffset = this.recoilYaw
   }

@@ -3,13 +3,25 @@
   import { hudState } from './hud-state.svelte.ts'
   import { t } from '../i18n/locale.svelte.ts'
   import { causeLabel, displayName, itemLabel, teamLabel } from './labels.ts'
+  import { BANDAGE_ART } from '../render/sprite-geometry.ts'
+  import PixelIcon from './PixelIcon.svelte'
+  import TopBar from './TopBar.svelte'
 
-  // mm:ss of the match clock.
-  const clock = $derived.by(() => {
-    const total = Math.max(0, Math.ceil(hudState.timeLeft))
-    const m = Math.floor(total / 60)
-    const sec = total % 60
-    return `${m}:${sec < 10 ? '0' : ''}${sec}`
+  const LOOT_MS = 2600
+  const lootOpacity = $derived.by(() => {
+    const age = hudState.now - hudState.lootAt
+    if (age > LOOT_MS) return 0
+    return age < LOOT_MS - 500 ? 1 : (LOOT_MS - age) / 500
+  })
+  // The chest notice names only what was really given.
+  const lootParts = $derived.by(() => {
+    const loot = hudState.loot
+    if (!loot) return []
+    const parts: string[] = []
+    if (loot.ammo) parts.push(t('loot.ammo'))
+    if (loot.bandages > 0) parts.push(t('loot.bandage', { n: loot.bandages }))
+    if (loot.grenades > 0) parts.push(t('loot.grenade', { n: loot.grenades }))
+    return parts
   })
 
   // Crosshair gap in px from the cone half-angle (radians).
@@ -71,31 +83,27 @@
     { n: 3, icon: 'shovel', label: itemLabel('shovel'), count: null as number | null },
     { n: 4, icon: 'blocks', label: itemLabel('blocks'), count: hudState.blocks },
     { n: 5, icon: 'grenade', label: itemLabel('grenade'), count: hudState.grenades },
+    { n: 6, icon: 'tnt', label: itemLabel('tnt'), count: hudState.tnt },
+    { n: 7, icon: 'ladder', label: itemLabel('ladder'), count: hudState.ladders },
+    { n: 8, icon: 'bandage', label: itemLabel('bandage'), count: hudState.bandages },
   ])
+  // Bandage channel shares the crosshair ring with the reload.
+  const healing = $derived(hudState.slot === 8 && hudState.healing > 0)
+  const ringProgress = $derived(healing ? hudState.healing : reloadProgress)
 </script>
 
-<div
-  class="absolute top-4 left-1/2 flex -translate-x-1/2 items-center gap-3 rounded-md bg-hud-panel px-4 py-1.5 text-lg font-semibold tabular-nums"
->
-  <span class="text-team-blue">{hudState.scoreBlue}</span>
-  <span class="text-hud-muted">:</span>
-  <span class="text-team-red">{hudState.scoreRed}</span>
-  <span
-    class="ml-2 text-sm {hudState.matchState === 'suddenDeath'
-      ? 'text-team-red'
-      : 'text-hud-muted'}"
-    >{hudState.matchState === 'suddenDeath' ? t('match.suddenDeath') + ' ' : ''}{clock}</span
-  >
-</div>
+{#if hudState.hasSnapshot}
+  <TopBar />
+{/if}
 {#if hudState.carrying}
   <div
-    class="absolute top-24 left-1/2 -translate-x-1/2 rounded-md bg-team-blue/80 px-4 py-1 text-sm font-semibold"
+    class="absolute top-28 left-1/2 -translate-x-1/2 rounded-md bg-team-blue-deep px-4 py-1 text-base font-semibold"
   >
     {t('match.carrying')}
   </div>
 {:else if hudState.protected}
   <div
-    class="absolute top-24 left-1/2 -translate-x-1/2 rounded-md bg-hud-panel px-3 py-1 text-xs text-hud-muted"
+    class="absolute top-28 left-1/2 -translate-x-1/2 rounded-md bg-hud-panel px-3 py-1 text-base text-hud-muted"
   >
     {t('match.protected')}
   </div>
@@ -103,7 +111,7 @@
 
 {#if hudState.showStats}
   <div
-    class="absolute top-4 right-4 rounded-md bg-hud-panel px-2 py-1 text-xs text-hud-muted tabular-nums"
+    class="absolute top-4 right-4 rounded-md bg-hud-panel px-2 py-1 text-sm text-hud-muted tabular-nums"
   >
     {hudState.fps} fps · t{hudState.tick} · mesh {hudState.meshAvgMs.toFixed(
       1,
@@ -114,17 +122,17 @@
   </div>
 {/if}
 
-<div class="absolute top-14 right-4 flex flex-col items-end gap-1 text-sm">
+<div class="absolute top-28 right-4 flex max-w-[40vw] flex-col items-end gap-1 text-base">
   {#each hudState.killFeed as entry (entry.id)}
     <div class="rounded bg-hud-panel px-3 py-1">
       {#if entry.flag}
         {#if entry.flag.action === 'autoReturned'}
-          <span class={entry.flag.team === 'blue' ? 'text-team-blue' : 'text-team-red'}
+          <span class={entry.flag.team === 'blue' ? 'text-team-blue-ink' : 'text-team-red-ink'}
             >{t('feed.flag.autoReturned', { team: teamLabel(entry.flag.team) })}</span
           >
         {:else}
           <span class="font-semibold">{displayName(entry.flag.name)}</span>
-          <span class={entry.flag.team === 'blue' ? 'text-team-blue' : 'text-team-red'}>
+          <span class={entry.flag.team === 'blue' ? 'text-team-blue-ink' : 'text-team-red-ink'}>
             {t(`feed.flag.${entry.flag.action}`, { team: teamLabel(entry.flag.team) })}</span
           >
         {/if}
@@ -150,7 +158,7 @@
 
 {#if hudState.alive && !hudState.scoped}
   <div class="absolute top-1/2 left-1/2 size-0" style="opacity: {1 - hudState.ads}">
-    {#if reloadingHeld}
+    {#if reloadingHeld || healing}
       <!-- Reload: the crosshair gives way to a ring that fills, with the seconds left inside. -->
       <svg
         class="absolute -translate-x-1/2 -translate-y-1/2"
@@ -167,7 +175,7 @@
           stroke-linecap="round"
           transform="rotate(-90)"
           stroke-dasharray={RING_LEN}
-          stroke-dashoffset={RING_LEN * (1 - reloadProgress)}
+          stroke-dashoffset={RING_LEN * (1 - ringProgress)}
         />
         <g
           class="animate-reload-spin stroke-hud"
@@ -183,9 +191,9 @@
         <text
           y={RING_R - 7}
           text-anchor="middle"
-          class="fill-hud text-[11px] font-semibold tabular-nums"
+          class="fill-hud text-xs font-semibold tabular-nums"
         >
-          {hudState.reloadLeft.toFixed(1)}
+          {healing ? Math.round(hudState.healing * 100) + '%' : hudState.reloadLeft.toFixed(1)}
         </text>
       </svg>
     {:else}
@@ -197,7 +205,7 @@
     {#if hudState.hitmarker}
       <span
         class="absolute top-1/2 left-1/2 size-5 -translate-x-1/2 -translate-y-1/2 rotate-45 text-xl leading-none font-bold {hudState.hitmarkerHead
-          ? 'text-team-red'
+          ? 'text-team-red-ink'
           : 'text-hud'}">+</span
       >
     {/if}
@@ -250,97 +258,138 @@
       {/each}
     </div>
     {#if hudState.showHpNumber}
-      <span class="text-xs text-hud-muted tabular-nums">{Math.ceil(hudState.hp)}</span>
+      <span class="text-sm text-hud-muted tabular-nums">{Math.ceil(hudState.hp)}</span>
     {/if}
   </div>
 </div>
 
-<!-- Hotbar -->
-<div class="absolute bottom-5 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2">
-  {#if itemNameOpacity > 0}
-    <span class="text-sm font-semibold drop-shadow" style="opacity: {itemNameOpacity}"
-      >{hudState.itemName ? itemLabel(hudState.itemName) : ''}</span
-    >
-  {/if}
-  <div class="flex gap-1.5">
-    {#each slots as slot (slot.n)}
+{#if hudState.hasSnapshot}
+  <!-- Hotbar -->
+  <div class="absolute bottom-5 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2">
+    {#if lootOpacity > 0}
       <div
-        class="relative size-14 rounded-md border-2 bg-hud-panel {slot.n === hudState.slot
-          ? 'border-hud shadow-[0_0_0_2px_rgba(255,255,255,0.35)]'
-          : slot.count === 0
-            ? 'border-team-red/50 opacity-60 grayscale'
-            : 'border-hud-muted/30'}"
+        class="flex gap-3 rounded-md bg-hud-panel px-4 py-1.5 text-lg font-semibold text-loot"
+        style="opacity: {lootOpacity}"
       >
-        {#if slot.count === 0}
-          <svg class="absolute inset-0 size-full" viewBox="0 0 56 56" aria-hidden="true">
-            <line x1="10" y1="46" x2="46" y2="10" class="stroke-team-red" stroke-width="3" />
-          </svg>
-        {/if}
-        <span class="absolute top-0.5 left-1 text-[10px] text-hud-muted">{slot.n}</span>
-        <svg class="absolute inset-0 m-auto size-9" viewBox="0 0 16 16" aria-hidden="true">
-          {#if slot.icon === 'primary'}
-            <path fill="#8d949c" d="M2 8h11v2H2z" />
-            <path fill="#3a3f46" d="M4 7h6v3H4zM4 10h2v3H4zM1 8h2v2H1z" />
-            <path fill="#7a4a24" d="M9 9h5v2H9zM11 11h3v1h-3z" />
-          {:else if slot.icon === 'pistol'}
-            <path fill="#3a3f46" d="M3 5h10v3H3z" />
-            <path fill="#8d949c" d="M3 6h9v1H3z" />
-            <path fill="#5d3719" d="M9 8h3v5H9z" />
-            <path fill="#3a3f46" d="M7 8h2v2H7z" />
-          {:else if slot.icon === 'shovel'}
-            <path fill="#7a4a24" d="M9 2h2v7H9z" />
-            <path fill="#8d949c" d="M7 9h6v3H7zM8 12h4v2H8z" />
-          {:else if slot.icon === 'blocks'}
-            <path fill={blockColorHex} d="M3 3h10v10H3z" />
-            <path fill="rgba(0,0,0,0.25)" d="M3 3h10v1H3zM3 3h1v10H3z" />
-            <path fill="rgba(255,255,255,0.25)" d="M12 4h1v9h-1zM4 12h9v1H4z" />
-          {:else}
-            <path fill="#2a2f2a" d="M5 5h6v8H5z" />
-            <path fill="#444" d="M6 6h4v6H6z" />
-            <path fill="#8d949c" d="M7 3h2v2H7z" />
-          {/if}
-        </svg>
-        {#if slot.count !== null && slot.count !== 1}
-          <span
-            class="absolute right-1 bottom-0.5 text-xs font-semibold text-hud drop-shadow-[0_1px_0_#000] tabular-nums"
-            >{slot.count}</span
-          >
+        {#if lootParts.length > 0}
+          {#each lootParts as part (part)}<span>{part}</span>{/each}
+        {:else}
+          <span class="text-base text-hud">{t('loot.full')}</span>
         {/if}
       </div>
-    {/each}
+    {/if}
+    {#if itemNameOpacity > 0}
+      <span
+        class="text-base font-semibold drop-shadow-[0_1px_0_#000]"
+        style="opacity: {itemNameOpacity}"
+        >{hudState.itemName ? itemLabel(hudState.itemName) : ''}</span
+      >
+    {/if}
+    <div class="flex gap-1.5">
+      {#each slots as slot (slot.n)}
+        <div
+          class="relative size-14 rounded-md border-2 bg-hud-panel {slot.n === hudState.slot
+            ? 'border-hud shadow-[0_0_0_2px_rgba(255,255,255,0.35)]'
+            : slot.count === 0
+              ? 'border-team-red/50 opacity-60 grayscale'
+              : 'border-hud-muted/30'}"
+        >
+          {#if slot.count === 0}
+            <svg class="absolute inset-0 size-full" viewBox="0 0 56 56" aria-hidden="true">
+              <line x1="10" y1="46" x2="46" y2="10" class="stroke-team-red" stroke-width="3" />
+            </svg>
+          {/if}
+          <span class="absolute top-0 left-1 text-sm text-hud-muted">{slot.n}</span>
+          {#if slot.icon === 'bandage'}
+            <PixelIcon art={BANDAGE_ART} class="absolute inset-0 m-auto size-10" />
+          {:else}
+            <svg class="absolute inset-0 m-auto size-9" viewBox="0 0 16 16" aria-hidden="true">
+              {#if slot.icon === 'primary'}
+                <path fill="#8d949c" d="M2 8h11v2H2z" />
+                <path fill="#3a3f46" d="M4 7h6v3H4zM4 10h2v3H4zM1 8h2v2H1z" />
+                <path fill="#7a4a24" d="M9 9h5v2H9zM11 11h3v1h-3z" />
+              {:else if slot.icon === 'pistol'}
+                <path fill="#3a3f46" d="M3 5h10v3H3z" />
+                <path fill="#8d949c" d="M3 6h9v1H3z" />
+                <path fill="#5d3719" d="M9 8h3v5H9z" />
+                <path fill="#3a3f46" d="M7 8h2v2H7z" />
+              {:else if slot.icon === 'shovel'}
+                <path fill="#7a4a24" d="M9 2h2v7H9z" />
+                <path fill="#8d949c" d="M7 9h6v3H7zM8 12h4v2H8z" />
+              {:else if slot.icon === 'blocks'}
+                <path fill={blockColorHex} d="M3 3h10v10H3z" />
+                <path fill="rgba(0,0,0,0.25)" d="M3 3h10v1H3zM3 3h1v10H3z" />
+                <path fill="rgba(255,255,255,0.25)" d="M12 4h1v9h-1zM4 12h9v1H4z" />
+              {:else if slot.icon === 'tnt'}
+                <path fill="#c8372d" d="M3 4h10v8H3z" />
+                <path fill="#e9e4d6" d="M3 7h10v2H3z" />
+                <path fill="#1d1d1d" d="M5 7h1v2H5zM8 7h1v2H8zM10 7h1v2h-1z" />
+                <path fill="#f2b134" d="M8 1h1v3H8z" />
+              {:else if slot.icon === 'ladder'}
+                <path
+                  fill="#a3743f"
+                  d="M4 1h2v14H4zM10 1h2v14h-2zM6 3h4v1H6zM6 7h4v1H6zM6 11h4v1H6z"
+                />
+              {:else}
+                <path fill="#2a2f2a" d="M5 5h6v8H5z" />
+                <path fill="#444" d="M6 6h4v6H6z" />
+                <path fill="#8d949c" d="M7 3h2v2H7z" />
+              {/if}
+            </svg>
+          {/if}
+          {#if slot.count !== null && slot.count !== 1}
+            <span
+              class="absolute right-1 bottom-0 text-base font-semibold text-hud drop-shadow-[0_1px_0_#000] tabular-nums"
+              >{slot.count}</span
+            >
+          {/if}
+        </div>
+      {/each}
+    </div>
   </div>
-</div>
 
-<!-- Ammo -->
-<div
-  class="absolute right-6 bottom-6 flex items-baseline gap-4 rounded-md bg-hud-panel px-4 py-2 tabular-nums"
->
-  {#if hudState.slot === 1}
-    <span class="text-3xl font-bold {heldEmpty || dryFlash ? 'text-team-red' : ''}"
-      >{hudState.mag}<span class="text-base text-hud-muted"> / {hudState.reserve}</span></span
-    >
-    {#if heldEmpty}<span class="text-sm font-semibold text-team-red">{t('hud.noAmmo')}</span>{/if}
-    {#if hudState.reloading}<span class="animate-pulse text-sm font-semibold text-hud"
-        >{t('hud.reloading')}</span
-      >{/if}
-  {:else if hudState.slot === 2}
-    <span class="text-3xl font-bold {heldEmpty || dryFlash ? 'text-team-red' : ''}"
-      >{hudState.pistolMag}<span class="text-base text-hud-muted">
-        / {hudState.pistolReserve}</span
-      ></span
-    >
-    {#if heldEmpty}<span class="text-sm font-semibold text-team-red">{t('hud.noAmmo')}</span>{/if}
-    {#if hudState.pistolReloading}<span class="animate-pulse text-sm font-semibold text-hud"
-        >{t('hud.reloading')}</span
-      >{/if}
-  {:else if hudState.slot === 4}
-    <span class="text-3xl font-bold">▣ {hudState.blocks}</span>
-  {:else if hudState.slot === 5}
-    <span class="text-3xl font-bold">◉ {hudState.grenades}</span>
-    {#if hudState.cooking >= 0}<span class="text-sm text-team-red"
-        >{hudState.cooking.toFixed(1)} s</span
-      >{/if}
-  {:else}
-    <span class="text-3xl font-bold">{itemLabel('shovel')}</span>
-  {/if}
-</div>
+  <!-- Ammo -->
+  <div
+    class="absolute right-6 bottom-6 flex items-baseline gap-4 rounded-md bg-hud-panel px-4 py-2 tabular-nums"
+  >
+    {#if hudState.slot === 1}
+      <span class="text-3xl font-bold {heldEmpty || dryFlash ? 'text-team-red-ink' : ''}"
+        >{hudState.mag}<span class="text-base text-hud-muted"> / {hudState.reserve}</span></span
+      >
+      {#if heldEmpty}<span class="text-base font-semibold text-team-red-ink">{t('hud.noAmmo')}</span
+        >{/if}
+      {#if hudState.reloading}<span class="animate-pulse text-base font-semibold text-hud"
+          >{t('hud.reloading')}</span
+        >{/if}
+    {:else if hudState.slot === 2}
+      <span class="text-3xl font-bold {heldEmpty || dryFlash ? 'text-team-red-ink' : ''}"
+        >{hudState.pistolMag}<span class="text-base text-hud-muted">
+          / {hudState.pistolReserve}</span
+        ></span
+      >
+      {#if heldEmpty}<span class="text-base font-semibold text-team-red-ink">{t('hud.noAmmo')}</span
+        >{/if}
+      {#if hudState.pistolReloading}<span class="animate-pulse text-base font-semibold text-hud"
+          >{t('hud.reloading')}</span
+        >{/if}
+    {:else if hudState.slot === 4}
+      <span class="text-3xl font-bold">▣ {hudState.blocks}</span>
+    {:else if hudState.slot === 5}
+      <span class="text-3xl font-bold">◉ {hudState.grenades}</span>
+      {#if hudState.cooking >= 0}<span class="text-base text-team-red-ink"
+          >{hudState.cooking.toFixed(1)} s</span
+        >{/if}
+    {:else if hudState.slot === 6}
+      <span class="text-3xl font-bold">{itemLabel('tnt')} {hudState.tnt}</span>
+    {:else if hudState.slot === 7}
+      <span class="text-3xl font-bold">{itemLabel('ladder')} {hudState.ladders}</span>
+    {:else if hudState.slot === 8}
+      <span class="text-3xl font-bold">{itemLabel('bandage')} {hudState.bandages}</span>
+      {#if healing}<span class="animate-pulse text-base font-semibold text-hud"
+          >{t('hud.healing')}</span
+        >{/if}
+    {:else}
+      <span class="text-3xl font-bold">{itemLabel('shovel')}</span>
+    {/if}
+  </div>
+{/if}

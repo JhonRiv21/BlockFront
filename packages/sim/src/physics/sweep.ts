@@ -43,6 +43,28 @@ function anySolidInPlane(
   return false
 }
 
+// Voxel range of the box on every axis at time t. The leading side of a moving axis comes
+// from leadVoxel (the voxel its face is in), so a face resting exactly on a boundary is not
+// taken as already past it; axes in `entering` also include the voxel they enter at t.
+function rangeAt(
+  box: Aabb,
+  vec: Vec3,
+  t: number,
+  step: Vec3,
+  leadVoxel: Vec3,
+  entering: readonly boolean[],
+  lo: Vec3,
+  hi: Vec3,
+): void {
+  for (let j = 0; j < 3; j++) {
+    const min = Math.floor(box.min[j]! + vec[j]! * t)
+    const max = Math.ceil(box.max[j]! + vec[j]! * t) - 1
+    const lead = leadVoxel[j]! + (entering[j] ? step[j]! : 0)
+    lo[j] = step[j]! < 0 ? lead : min
+    hi[j] = step[j]! > 0 ? lead : max
+  }
+}
+
 // Moves the box along vec until it touches a solid voxel on one axis (fenomas/voxel-aabb-sweep
 // style): voxel boundaries crossed by the leading faces are visited in order of time, and the
 // slice of voxels the face would enter is tested before entering it. Returns the collision or
@@ -66,22 +88,38 @@ function sweepOnce(isSolid: SolidTest, box: Aabb, vec: Vec3): Collision | null {
 
   const lo: Vec3 = [0, 0, 0]
   const hi: Vec3 = [0, 0, 0]
+  const none = [false, false, false]
+  const tied = [false, false, false]
   for (;;) {
-    let axis = 0
-    if (tNext[1] < tNext[axis]!) axis = 1
-    if (tNext[2] < tNext[axis]!) axis = 2
-    const t = tNext[axis]!
+    const t = Math.min(tNext[0], tNext[1], tNext[2])
     if (t > 1) break
 
-    const plane = leadVoxel[axis]! + step[axis]!
+    // Axes whose faces reach a boundary at this same instant (within CORNER_EPSILON of travel).
+    let crossing = 0
     for (let j = 0; j < 3; j++) {
-      // The other axes include the voxel they are about to enter at this same instant, so a
-      // box reaching two boundaries at once cannot slip diagonally through a corner.
-      const lead = j !== axis && vec[j]! !== 0 ? CORNER_EPSILON * step[j]! : 0
-      lo[j] = Math.floor(box.min[j]! + vec[j]! * t + Math.min(lead, 0))
-      hi[j] = Math.ceil(box.max[j]! + vec[j]! * t + Math.max(lead, 0)) - 1
+      tied[j] = (tNext[j]! - t) * Math.abs(vec[j]!) <= CORNER_EPSILON
+      if (tied[j]) crossing++
     }
-    if (anySolidInPlane(isSolid, axis, plane, lo, hi)) {
+
+    // A tied axis blocked by its own slice collides first: a box resting on the floor that
+    // walks across a boundary is stopped by the floor on Y, not by the floor row on X.
+    let axis = -1
+    rangeAt(box, vec, t, step, leadVoxel, none, lo, hi)
+    for (let a = 0; a < 3 && axis < 0; a++) {
+      if (tied[a] && anySolidInPlane(isSolid, a, leadVoxel[a]! + step[a]!, lo, hi)) axis = a
+    }
+    // Otherwise the voxel diagonal to two simultaneous crossings blocks too, so the box cannot
+    // slip through a corner.
+    for (let a = 0; a < 3 && axis < 0 && crossing > 1; a++) {
+      if (!tied[a]) continue
+      tied[a] = false
+      rangeAt(box, vec, t, step, leadVoxel, tied, lo, hi)
+      tied[a] = true
+      if (anySolidInPlane(isSolid, a, leadVoxel[a]! + step[a]!, lo, hi)) axis = a
+    }
+
+    if (axis >= 0) {
+      const plane = leadVoxel[axis]! + step[axis]!
       for (let j = 0; j < 3; j++) {
         box.min[j] = box.min[j]! + vec[j]! * t
         box.max[j] = box.max[j]! + vec[j]! * t
@@ -97,8 +135,11 @@ function sweepOnce(isSolid: SolidTest, box: Aabb, vec: Vec3): Collision | null {
       }
       return { axis, t }
     }
-    leadVoxel[axis] = leadVoxel[axis]! + step[axis]!
-    tNext[axis] = t + tDelta[axis]!
+    for (let j = 0; j < 3; j++) {
+      if (!tied[j]) continue
+      leadVoxel[j] = leadVoxel[j]! + step[j]!
+      tNext[j] = tNext[j]! + tDelta[j]!
+    }
   }
 
   for (let j = 0; j < 3; j++) {

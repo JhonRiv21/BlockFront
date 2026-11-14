@@ -3,11 +3,12 @@ import { WORLD_SIZE } from '../config.ts'
 import { playerAabb } from '../physics/player-controller.ts'
 import type { Vec3 } from '../physics/sweep.ts'
 import { raycastVoxels } from '../raycast/dda.ts'
-import { BLOCK, isCross, type BlockId } from '../world/blocks.ts'
+import { BLOCK, isCross, ladderFor, type BlockId } from '../world/blocks.ts'
 import { TERRAIN } from '../world/generator.ts'
 import type { MatchContext } from './context.ts'
 import { eyePosition, overlapsBox, viewDirection, type PlayerEntity } from './entities.ts'
 import type { Team } from './types.ts'
+import { forgetTnt, placeTnt } from './explosives.ts'
 
 function blockKey(x: number, y: number, z: number): number {
   return x + y * WORLD_SIZE.x + z * WORLD_SIZE.x * WORLD_SIZE.y
@@ -15,12 +16,17 @@ function blockKey(x: number, y: number, z: number): number {
 
 export function recordBlock(ctx: MatchContext, x: number, y: number, z: number, id: BlockId): void {
   ctx.blockChanges.set(blockKey(x, y, z), [x, y, z, id])
-  if (id === BLOCK.air) ctx.blockOwners.delete(blockKey(x, y, z))
+  if (id === BLOCK.air) {
+    ctx.blockOwners.delete(blockKey(x, y, z))
+    forgetTnt(ctx, x, y, z)
+  }
   ctx.events.push({ type: 'block', x, y, z, id })
 }
 
-// Team a block belongs to: whoever placed it, or the base colour the generator gave it.
+// Team a block belongs to: whoever placed it, or the base colour the generator gave it. FFA has
+// no teams, so D3 never applies there.
 export function blockTeam(ctx: MatchContext, x: number, y: number, z: number): Team | null {
+  if (ctx.mode === 'ffa') return null
   const owner = ctx.blockOwners.get(blockKey(x, y, z))
   if (owner) return owner
   const id = ctx.world.getBlock(x, y, z)
@@ -89,8 +95,28 @@ export function damageBlock(
   }
 }
 
-export function placeBlock(ctx: MatchContext, player: PlayerEntity): boolean {
-  if (player.blocks <= 0) return false
+export type Placeable = 'blocks' | 'tnt' | 'ladder'
+
+function stockOf(player: PlayerEntity, kind: Placeable): number {
+  if (kind === 'tnt') return player.tnt
+  if (kind === 'ladder') return player.ladders
+  return player.blocks
+}
+
+function spend(player: PlayerEntity, kind: Placeable): void {
+  if (kind === 'tnt') player.tnt--
+  else if (kind === 'ladder') player.ladders--
+  else player.blocks--
+}
+
+// Puts a block on the face under the crosshair. Ladders go only on a side face and, being
+// non-solid, may share the cell with a player; TNT starts its fuse the moment it lands.
+export function placeBlock(
+  ctx: MatchContext,
+  player: PlayerEntity,
+  kind: Placeable = 'blocks',
+): boolean {
+  if (stockOf(player, kind) <= 0) return false
   const hit = raycastVoxels(
     ctx.isSolid,
     eyePosition(player),
@@ -100,15 +126,21 @@ export function placeBlock(ctx: MatchContext, player: PlayerEntity): boolean {
   if (!hit) return false
   const [nx, ny, nz] = hit.normal
   if (nx === 0 && ny === 0 && nz === 0) return false
+  if (kind === 'ladder' && ny !== 0) return false
   const x = hit.x + nx
   const y = hit.y + ny
   const z = hit.z + nz
-  if (!ctx.world.inBounds(x, y, z) || ctx.isSolid(x, y, z)) return false
-  for (const other of ctx.players.values()) {
-    if (other.alive && overlapsBox(playerAabb(other.state), x, y, z)) return false
+  if (!ctx.world.inBounds(x, y, z) || ctx.world.getBlock(x, y, z) !== BLOCK.air) return false
+  if (kind !== 'ladder') {
+    for (const other of ctx.players.values()) {
+      if (other.alive && overlapsBox(playerAabb(other.state), x, y, z)) return false
+    }
   }
-  player.blocks--
+  spend(player, kind)
   ctx.blockOwners.set(blockKey(x, y, z), player.config.team)
-  setBlock(ctx, x, y, z, player.blockColor, true)
+  const id =
+    kind === 'tnt' ? BLOCK.tnt : kind === 'ladder' ? ladderFor(hit.normal) : player.blockColor
+  setBlock(ctx, x, y, z, id, true)
+  if (kind === 'tnt') placeTnt(ctx, player, x, y, z)
   return true
 }

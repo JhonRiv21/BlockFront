@@ -76,6 +76,20 @@ describe('landing', () => {
 describe('sneaking on an edge', () => {
   const ledge: Cell = (x, y) => y < 0 && x < 4
 
+  it('stops with at least 0.05 of the box still over the block, so standing up is safe', () => {
+    const player = createPlayer([3.5, 0, 0.5])
+    for (let i = 0; i < 60; i++)
+      stepPlayer(player, { ...idle, strafe: 1, crouch: true }, ledge, TICK_SECONDS)
+    // Box half-width 0.3: the far edge must stay at least 0.05 inside x = 4.
+    expect(player.pos[0] - 0.3).toBeLessThanOrEqual(4 - 0.05 + 1e-9)
+    expect(player.pos[0] - 0.3).toBeGreaterThan(3.8)
+    expect(player.onGround).toBe(true)
+    // Letting go of crouch without moving: still standing on the ledge a second later.
+    for (let i = 0; i < 30; i++) stepPlayer(player, idle, ledge, TICK_SECONDS)
+    expect(player.onGround).toBe(true)
+    expect(player.pos[1]).toBeCloseTo(0, 5)
+  })
+
   it('keeps a crouched player on a one-block drop', () => {
     const player = createPlayer([3.5, 0, 0.5])
     for (let i = 0; i < 60; i++)

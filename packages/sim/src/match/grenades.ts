@@ -1,14 +1,11 @@
-import { explodeBlocks } from '../combat/blocks.ts'
 import { stepGrenade, throwSpeed, throwVelocity, type GrenadeEntity } from '../combat/grenade.ts'
-import { GRENADE, KNOCKBACK, PLAYER_HP } from '../combat/weapons.ts'
+import { GRENADE, PLAYER_HP } from '../combat/weapons.ts'
 import { TICK_SECONDS } from '../config.ts'
 import type { Vec3 } from '../physics/sweep.ts'
-import { raycastVoxels } from '../raycast/dda.ts'
-import { BLOCK } from '../world/blocks.ts'
-import { blockTeam, clearDecorAbove, fillWithWater, recordBlock } from './block-edits.ts'
 import type { MatchContext } from './context.ts'
-import { applyDamage, knockback } from './damage.ts'
-import { bodyCenter, eyePosition, type PlayerEntity } from './entities.ts'
+import { applyDamage } from './damage.ts'
+import { eyePosition, type PlayerEntity } from './entities.ts'
+import { explodeAt } from './explosives.ts'
 
 // Press: pin out, fuse running, power charging for 0.8 s; then it only cooks. Release throws
 // with the charged speed; the right click while holding lobs it underhand (docs §4).
@@ -86,36 +83,5 @@ export function stepGrenades(ctx: MatchContext): void {
 }
 
 export function explode(ctx: MatchContext, center: Vec3, owner: PlayerEntity | null): void {
-  ctx.events.push({ type: 'explosion', x: center[0], y: center[1], z: center[2] })
-  const team = owner?.config.team ?? null
-  const broken = explodeBlocks(
-    ctx.world,
-    ctx.health,
-    center,
-    GRENADE.blockRadius,
-    (x, y, z) => team !== null && blockTeam(ctx, x, y, z) === team,
-  )
-  for (const [x, y, z] of broken) {
-    recordBlock(ctx, x, y, z, BLOCK.air)
-    clearDecorAbove(ctx, x, y, z)
-  }
-  for (const [x, y, z] of broken) fillWithWater(ctx, x, y, z)
-  for (const player of ctx.players.values()) {
-    if (!player.alive) continue
-    if (owner && player !== owner && player.config.team === owner.config.team) continue
-    const target = bodyCenter(player)
-    const dx = target[0] - center[0]
-    const dy = target[1] - center[1]
-    const dz = target[2] - center[2]
-    const distance = Math.hypot(dx, dy, dz)
-    if (distance >= GRENADE.damageRadius) continue
-    const blocked = raycastVoxels(ctx.isSolid, center, [dx, dy, dz], distance)
-    if (blocked && blocked.distance > 0) continue
-    const damage = GRENADE.maxDamage * (1 - distance / GRENADE.damageRadius)
-    applyDamage(ctx, owner ?? player, player, damage, 'torso', 'grenade')
-    const push = KNOCKBACK.explosion * (1 - distance / GRENADE.damageRadius)
-    // Blast at the body centre (distance 0) pushes straight up instead of dividing by zero.
-    const dir: Vec3 = distance > 0 ? [dx / distance, dy / distance, dz / distance] : [0, 1, 0]
-    knockback(player, dir, push)
-  }
+  explodeAt(ctx, center, owner, GRENADE, 'grenade')
 }

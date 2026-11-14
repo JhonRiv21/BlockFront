@@ -912,3 +912,471 @@ earlier is not in yet (needs the "respawn at will skips protection" rule).
   surfaces); a level gaze holds the swimmer at 62 % submerged instead of sinking; Space and C
   override up and down. Without sprint the 2.2 blocks/s wading stays. `MoveInput` carries the
   pitch now. 4 swimming tests rewritten from the new spec (228 sim tests).
+
+## F3 — Part B: new items (2026-10-21)
+
+Checks green: typecheck, lint, format, wrangler dry-run, **239 sim tests** (+10) and **19 client
+tests**. No commit.
+
+**Before the items.** The pointer lock is now requested synchronously inside the Play click (a
+deferred request could fall outside the user activation and be refused); the ammo box and the
+hotbar stay hidden until the first snapshot of a match; a test covers the ally returning a
+dropped flag by touch (returns credited to the toucher only).
+
+**Sim** (`docs/f2-6-feel.md` §6 #2–#5; `ITEMS` in `combat/weapons.ts`). Slots 6–9: TNT,
+reinforced block, ladder, medkit. Placeables and the medkit lock their slot at zero stock and the
+base restock refills them.
+
+- **TNT** (`match/explosives.ts`): placed as a block, 2 per life, 4 s fuse from placement; a
+  bullet on it sets it off at once; the shovel can still dig it out (defuse). Blast: blocks within
+  3, damage 150 fading to 0 at 5, friendly fire off (teammates spared, the owner is not), the
+  owner's team blocks spared (D3), chain reaction on other TNT in reach. Grenades now go
+  through the same `explodeAt`.
+- **Reinforced block**: 300 hp (`maxBlockHp`), six enemy shovel hits, 10 per life, own texture
+  (steel plate with rivets). TNT and grenades remove it like any block.
+- **Ladder**: a non-solid cross placed only on a side face (may share the cell with a player),
+  10 per life, 1 hp so one shovel hit breaks it (the shovel's ray now reaches ladders, bullets and
+  movement pass through). Climbing: W or Space 2.4 blocks/s, C holds, otherwise a 1.5 blocks/s
+  slide; no gravity and the fall tracker resets, so a drop onto a ladder costs nothing. The climb
+  is swept separately from the push into the wall, which a diagonal sweep read as a ceiling hit.
+- **Medkit**: 1 per life; hold fire for 1 s to heal to full; letting go restarts; not while
+  carrying the flag or at full health. `heal` event.
+- Snapshot carries the four stocks and the channel progress; `PlayerEntity` and the serialized
+  game carry the TNT list.
+
+**Client.** Four `SpriteItem` pixel arts (TNT, reinforced block, ladder, medkit) held like the
+shovel, swing on placement; hotbar of 9 smaller slots with icons and counts; the ammo box names
+the item and its stock; the medkit channel reuses the crosshair ring with a percentage; three
+new texture layers (TNT side and top, reinforced, ladder cutout); hints and item names in ES/EN.
+
+**Smoke test in a hidden tab.** Nine slots, TNT placed from slot 6 (stock 2 → 1), detonation
+4 s later with the explosion effect, no console errors. Standing one block from your own TNT is
+lethal, as in Minecraft.
+
+- 2026-10-22: the **reinforced block is removed** (a bunker around the flag kills the capture);
+  slots are 6 TNT, 7 ladder, 8 medkit. **Ladders are flat**: four ids carry the wall they hang
+  on (`ladderEast/West/South/North`), the mesher emits one quad a sixteenth off that wall (render
+  kind `flat`) instead of the plant cross that looked like a 3D helix. 2 mesher tests.
+- QA mode (2026-10-22, asked by the QA session): dev builds only, `?qa=1`. The match runs
+  without a pointer lock and does not pause on a hidden tab; `window.blockfront.qa` injects
+  keys and buttons through the real latch (`hold`, `press`, `mouse`), sets the view (`look`),
+  pokes the sim worker (`teleport`, `give`, `setHp`, `kill`), reads `state()`, `events(n)`,
+  `blockAt`, `ui()`, and waits with `waitTicks` / `waitFor`. `npm run check:qa-absent` builds
+  the client and fails if any QA marker survives in `dist` (it does not). The snapshot now
+  carries `onLadder`.
+- QA round 1 fixes (2026-10-22): `flag dropped` now travels with the tick (dev pokes run inside
+  the worker's step; a death by bullet was already in-tick, covered by a new test); HUD button
+  clicks (Play, Play again, Resume) no longer reach the trigger, only clicks on the canvas do,
+  and the latch is cleared on start and resume; sneaking keeps at least 0.05 of the box over the
+  ledge (test: stop, release C, still standing); hp is kept to hundredths and anything under
+  0.01 is dead; P asks for the pointer lock back while paused, so it resumes; scoreboard
+  columns have fixed widths and full headers; the pointer is released when the match ends so
+  the result panel is clickable. QA API: `matchId`, `spread` in degrees, `pause()`/`resume()`,
+  events cleared per match.
+- QA round 2 (2026-10-22): the Tab scoreboard stacks the two team tables (shared
+  `ScoreTable.svelte`, also used by the end-of-match panel) in a 40 rem panel with fixed column
+  widths; checked with four rows per team. QA API gained `addDummy(team, name, x, z)`.
+- 2026-10-22 evening: a click on the menu backdrop no longer grabs the pointer (the canvas asks
+  for the lock only while a match is up); primed TNT flashes white like Minecraft's, 2 to 8
+  times a second as the fuse runs down (`tnt-fuse.ts`), with a synthesized fuse hiss placed at
+  the block (`GunAudio.fuse`: looped noise through a bandpass with a 14 Hz sputter).
+
+## Final S1 — modes, chests and bandages (2026-11-13)
+
+Executed from `docs/final-scope.md` §1–§3 on top of the uncommitted F3-B tree. Checks green:
+typecheck, lint, format, `check:qa-absent`, wrangler dry-run, **272 sim tests** (+31) and
+**19 client tests**. No commit.
+
+**Setup and modes (sim).** `match/setup.ts`: `MatchSetup`, `DEFAULT_MATCH_SETUP` (TDM 4v4
+Soldier, rifle, seed 1), `matchPlayers(setup)` (pure: the human id 1 `you` in blue, bots
+`bot-<id>` with `bot: { difficulty }`, allies first) and `createGameConfig(setup)`.
+`GameConfig.mode` is optional (absent = CTF, so the older tests and saves keep working).
+`rules/modes.ts` holds the per-mode target and clock (CTF 3 / 10 min + sudden death, TDM 25 /
+8 min, FFA 15 / 8 min), the respawn rule (CTF waves, TDM/FFA 4 s), `scoreStatus`, `killsMvp`
+and `clockLeft`; `match/score-system.ts` runs TDM and FFA.
+
+- TDM: team score per kill, restock and protection in the own base, individual respawn 4 s on
+  a base slot, no flags (the snapshot sends none and touching a pole does nothing).
+- FFA: everyone is an enemy (`isEnemy` in hitscan, blasts and kill credit), `blockTeam` is
+  null so D3 never applies and the base structures are neutral, no `stepBase` (no restock),
+  12 deterministic spawn points (`match/placement.ts`) and the one farthest from the living
+  players is taken, also at the start, so nobody starts stacked.
+- Own deaths (`attacker === victim`: own blast, fall or drowning with nobody credited) add to
+  `stats.suicides`; TDM takes 1 from the own team, FFA scores `kills − suicides`.
+- `matchEnd { winner, winnerPlayer }`: `winner` is `'blue' | 'red' | 'player' | 'none'`
+  (`'player'` = FFA win, `winnerPlayer` names them; `'none'` = draw).
+- Team spawns spread over 8 slots inside each base (the first is the old point), so a 6v6
+  does not stack on one block.
+
+**Chests, bandages and TNT.** `match/chests.ts` + `CHEST` in `combat/weapons.ts`: 10 chests
+(ids 1–5 in the blue half, 6–10 their mirrors), best-candidate sampling by seed on natural dry
+ground, ≥ 12 from each flag and ≥ 10 apart; touching one alive opens it (flag reach), refills
+both reserves, +1 bandage and +1 grenade up to 3; empty for 30 s; `loot` and `chestRefill`
+events; `chests` in the snapshot and in the serialized game. Bandages replace the medkit on
+slot 8 (`ITEMS.bandage`: +40 hp, start 1, max 3, 1 s channel, not for the carrier). The own
+shovel picks the own TNT back up (+1 stock up to the per-life 2, no blast); a teammate still
+cannot (D3).
+
+**Client (only what compiling and QA needed).** medkit → bandage (strings «Vendas» /
+«Bandages», hotbar, viewmodel key, kill-feed filter), `bot-N` shows as «Bot N», the renderer
+starts from a `MatchSetup` (the menu's Play is `DEFAULT_MATCH_SETUP` with the chosen primary;
+Play again repeats the setup), no dummies in the match any more (QA `addDummy` still works),
+flags hidden when the snapshot has none. QA: `startMatch(Partial<MatchSetup>)`,
+`state().chests`, `me.bandages/score/suicides`, per-player kills, deaths and score,
+`give('bandages', n)` (capped at 3).
+
+**Decisions where the spec stopped.**
+
+- Chest and spawn distances are horizontal; chests keep 8 blocks off the map edge and 2
+  columns from water, FFA spawns 4 off the edge and 4 columns from water.
+- Opening needs no "need": touching a full chest always spends it (spec: touching opens).
+- The base restock gives bandages back up to 1 and keeps chest extras.
+- FFA keeps the 4 s spawn protection, ended by firing or the timer (no base to step out of).
+- In FFA the bots are red and the human blue only for the current renderer; the rules ignore it.
+- Two sides crossing the target on the same tick: the higher score wins, an equal top is a draw.
+- Team scores may go negative in TDM after suicides.
+
+**Numbers.** Chest placement ~4 ms and FFA spawns ~13 ms per match start (on top of ~45 ms of
+world generation). Build: app 70.9 KB gzip, sim worker 50.9 KB (17.8 KB gzip), three
+161.5 KB gzip.
+
+**Left for S3.** The end panel still only knows team wins (an FFA win reads as a draw), the HUD
+shows CTF-style team scores in every mode, the bandage icons are still the medkit art, and there
+is no chest model yet.
+
+## Final S3 — product (2026-11-13)
+
+Executed from `docs/final-scope.md` §5, client only (`apps/client`, `index.html`, `public/`,
+`assets/CREDITS.md`); `packages/sim` untouched while S2 works on the bots in parallel. Client
+checks green: typecheck, `eslint apps`, **36 client tests** (+17), format of the client,
+`check:qa-absent`, build. No commit.
+
+**Menu and settings.** The menu picks the mode (three cards with one line each), the size
+(2v2–6v6, or 4/6/8 players in FFA), the difficulty and the primary; Play is one click and starts
+the last choice (TDM 4v4 Soldier the first time). `settings/match-setup.ts` validates the stored
+setup field by field; `ui/menu-state.svelte.ts` keeps it. Settings (`settings/settings.ts`,
+`settings-state.svelte.ts`) open from the menu and the pause panel and apply at once:
+sensitivity (`InputState.sensitivity` × the old `LOOK_SENSITIVITY`), ADS sensitivity (blended in
+`AdsView` with the ADS progress), FOV 70–100 (`AdsView.baseFov`, which the zoom is computed from),
+volumes (`GunAudio.setVolumes`: master gain, a weapons group over the own/enemy/impact/ui buses and
+a world group over the world bus; `SoundBank.setVolume` = general × world), invert Y, FPS counter,
+reduce motion (`CameraEffects.motionScale` 0: no shake, hurt roll or landing dip; weapon bob ×
+0.25; the recoil stays because it is aim), language ES/EN (browser language until chosen).
+
+- localStorage keys: `blockfront:settings` and `blockfront:setup`. Every access goes through
+  `settings/storage.ts` (try/catch, warns, falls back to the defaults).
+
+**HUD by mode.** `TopBar.svelte`: CTF captures and clock; TDM team kills, "goal 25" and clock;
+FFA place (`#/n`, ties share a place), own kills, the leader's kills, "goal 15" and clock. The
+"kills" shown are the sim's `score` (kills minus own deaths), which is what reaches the goal.
+Tab and the end table: CTF keeps captures/returns; TDM and FFA show a score column; FFA is one
+table ordered by score (`ui/standings.ts`). End panel: CTF/TDM say victory or defeat and the
+winning team, FFA says "You win!" or "<name> wins" plus your place (the FFA-win-as-draw bug is
+gone); MVP line by mode; Play again repeats the setup, Menu goes back. Death screen says "next
+wave" in CTF and "respawn in" in TDM/FFA. Nothing from the last match survives the return to
+the menu (an `ended` state used to keep the result panel up over the next match until its first
+snapshot).
+
+**Bots, chests, bandages.** `ui/bot-names.ts`: 36 made-up names, `botName(id)` steps through the
+list by 11 (coprime with 36), so ids 2–12 never repeat; `displayName('bot-N')` uses it everywhere
+(feed, tables, death screen, nameplates). Nameplates only over allies and none in FFA; long names
+shrink the font to fit. `render/chests-view.ts`: a 14×10×14-sixteenths wooden chest (canvas plank
+texture, dark inside faces, iron bands and corner posts, brass latch), front toward the middle of
+the map; full = closed with a pulsing additive glow and a glowing latch, empty = lid swung open
+(−109°, eased) and no glow. Opening plays `GunAudio.chestOpen` (synthesized creak, click and
+chime, positional). The notice above the hotbar says only what was given (`render/loot.ts`
+diffs the snapshot before and after the `loot` event: "+ammo", "+1 bandage", "+1 grenade", or
+"already fully stocked"). Full chests within 40 blocks show as icons on the compass (flags draw
+over them). Bandages have their own pixel art (`BANDAGE_ART`, a rolled bandage with a red
+stripe), used by the hotbar (`PixelIcon.svelte`) and the held item; the medkit art is gone. Fixed
+on the way: the ammo box showed ladders on slot 8 and bandages on a non-existent slot 9.
+
+**Start-up, mobile, meta.** `LoadingScreen.svelte` covers the canvas with a progress bar: the
+first full mesh of the world (which warms the mesher workers) fills 85 % chunk by chunk, the
+assets the rest; the menu stays hidden until both are done. Touch-only devices (`(pointer:
+coarse)` and no `(any-pointer: fine)`) get a static "Desktop only" page with the screenshot and
+the renderer is never mounted. `index.html`: `lang` (switched at run time), a bilingual
+description, Open Graph (image 1200×630, locales es/en), Twitter `summary_large_image`,
+`theme-color`, canonical. `public/og.png` (214 KB) is a headless capture of the game (Chrome +
+SwiftShader through Playwright, a CTF match paused, free camera over the blue base, title drawn
+over it), quantized with pngquant.
+
+**Accessibility.** HUD text is 16 px or more except the slot digits and the FPS overlay (14 px);
+the panel is 80 % opaque so muted text keeps ≥ 4.5:1 over the bright sky, and team colours
+used as text have lighter `-ink` variants (`team-blue-ink`, `team-red-ink`), with a deep blue
+behind the white "you have the flag" text.
+
+**Out of production** (checked in the built bundle): the pause panel's primary selector, F and
+H, and `qa`. QA API: `ui()` adds `settings`, `loading { stage, progress, done }`, `locale`,
+`menuSetup`, `settingsValues`, `mode`, `scoreToWin`, `winner`, `winnerPlayer`, `chestMarkers`,
+`loot`; new `openSettings(open)` and `setting(key, value)`.
+
+**Checked in a headless browser** (Chrome, SwiftShader, dev server with `?qa=1` and the built
+preview): loading → menu; settings change FOV (camera 95°), language and are kept after a
+reload, as is the menu setup (FFA 8 Veteran Sniper); Play starts that setup; TDM and FFA top
+bars; Tab tables; a chest opened by touch (`loot` event for player 1, toast "+1 venda", lid open,
+glow gone, compass icon gone); FFA end panel for another winner and for you; Play again (same
+setup, fresh match); pause → settings → back; phone emulation shows the desktop-only page with
+no canvas; production pause panel without the selector.
+
+**Numbers.** Build: app 241.9 KB (80.5 KB gzip, was 70.9), CSS 6.0 KB gzip, three 161.5 KB
+gzip, sim worker 74.7 KB (26.7 KB gzip, includes S2's bots in progress). Menu ready ~2.5 s after
+navigation in the built preview (headless Chrome with software WebGL on an M-series Mac).
+
+**Left open.**
+
+- At the time of this run the S2 work in `packages/sim/src/bots` fails `eslint` (4 errors) and
+  `prettier --check` (7 files); that is S2's to fix, not touched here.
+- The chest glow is subtle in full daylight (additive over a bright background); no particles.
+- `og:url` / `og:image` assume `https://blockfront.riverogz.com/`.
+
+## Final S2 — bots (2026-11-13)
+
+Executed from `docs/final-scope.md` §4. Checks green: typecheck, lint, format,
+`check:qa-absent`, **303 sim tests** (+31: 12 behaviour, 9 navigation, 6 aim, 4 sight) and the
+client's 36. The worker did not change: bots build their `InputFrame` inside `Game.step` for
+every player with `config.bot`, no `dummy` and no external input. No commit.
+
+**Architecture (`packages/sim/src/bots`).**
+
+- `director.ts` — `BotDirector`, owned by the `Game`. Each tick, before the players step: drops
+  the paths a `block` event crossed, runs the queued A* searches on one budget of **2000 nodes
+  per tick** shared by all bots (≤ 1500 per search, partial paths toward far goals), then calls
+  every bot's brain. It is the CTF commander (roles by config order: with 2 per team attack +
+  flex; with more ~50 % attack, ~25 % defend, the rest flex), picks each team's river lane per
+  respawn wave and computes the TDM/FFA hotspots (the ford, 4 high points per half mirrored, the
+  chests). Its state (brains, queue, lanes) is plain data and travels in
+  `SerializedGame.bots`, so a restored game replays identically.
+- `perception.ts` — the only code that reads other players. Sight: DDA from the eye to the
+  head and to the torso, inside the field of view, ≤ 70 blocks. Hearing, from the previous
+  tick's events: enemy shots ≤ 30, digging/placing ≤ 8 and footsteps ≤ 8 (the client's rule:
+  on the ground at ≥ 1 m/s), each placed ±3 blocks off. Team info: allies, both flags (the
+  compass shows them, so the own flag's carrier too). Chests: known positions, contents only
+  when seen.
+- `brain.ts` — one bot's mind: contacts (memory per difficulty), noises, chest beliefs, goal,
+  navigation and aim state. Per tick: perceive → pick a target only after the reaction time →
+  utility decision → move (path following) → look (turn-rate limited) → hands (slot, fire, ADS,
+  reload, bandage, quick grenade). Utility goals: combat, heal (bandage when < 50 hp and nothing
+  in sight), survive / ammo (known full chest or base), search the last seen position, the
+  mode's objective, noise, roam.
+- `aim.ts` — turn limit, aim error that starts at the skill's value and shrinks while tracking
+  (×0.95 per tick down to half the start, at most 1°) and grows with the target's sideways
+  motion; fires only when the ray of the current view meets the target's hitboxes.
+- `navigation.ts` — grid A*: walk (diagonals only on the level, never across corners), jump 1,
+  drop ≤ 3 (deeper into water), swim on the surface at ×3 cost, a 1-block hop out of water;
+  leaves are no footing. Open-addressed typed node table, no allocation per node.
+- `steering.ts` — path following (jump early enough to clear a step) and the stuck rules: no 1
+  block of progress over the ground in 2 s → jump, 3 s → dig the block in front with the
+  shovel, 5 s → another destination.
+- `roles.ts` (roles and primary weights), `difficulty.ts` (§4 table), `bench.ts` (harness core,
+  clock injected).
+
+**CTF tactics** (where the spec only said "go to the flag"): attackers gather at a staging point
+24 blocks in front of the enemy flag, then rush together when the respawn schedule (global, the
+same for everyone) says they will arrive 3.5–5.5 s into a wave, a teammate is already rushing
+or they have waited 12 s, never into a base where they remember an enemy, and never hurt. Late
+rushes abort. Each wave a team takes the ford or a swim on one side. Carriers sprint home and
+only fight enemies ahead or within 12 blocks; escorts follow the carrier, otherwise the nearest
+attacker; defenders patrol 4–14 blocks around the flag and recover it when it leaves.
+
+**Harness.** `npm run bots:bench -- --mode ctf --size 4 --difficulty veteran --matches 10`
+(`--blue X --red Y` for mixed teams, `--seed` map, `--offset` first variant, `--json`). Runs in
+Node (`--experimental-transform-types`), all players bots, matches on map seed 1 varied by
+reseeding the match RNG. Per match: duration, winner and how, score, captures (and the first),
+kills, accuracy per difficulty (gun shots that hit), worst stuck share per bot and `Game.step`
+ms (avg, p99).
+
+**Results.** Behaviour columns from runs of 3–20 matches per row; timing from single-process
+runs (Node 22.23, Apple silicon), since the parallel matrix inflates it.
+
+| Mode | Size | Difficulty | Matches | Capture ≤ 10 min (CTF) / ends by score | Avg length | Kills | Accuracy | Worst stuck |
+| ---- | ---- | ---------- | ------- | -------------------------------------- | ---------- | ----- | -------- | ----------- |
+| CTF  | 2v2  | Recruit    | 3       | 100 %                                  | 377 s      | 33    | 38 %     | 1.2 %       |
+| CTF  | 2v2  | Soldier    | 3       | 100 %                                  | 587 s      | 57    | 58 %     | 0.7 %       |
+| CTF  | 2v2  | Veteran    | 3       | 100 %                                  | 600 s      | 73    | 55 %     | 1.0 %       |
+| CTF  | 4v4  | Recruit    | 3       | 100 %                                  | 518 s      | 97    | 40 %     | 2.0 %       |
+| CTF  | 4v4  | Soldier    | 3       | 67 %                                   | 511 s      | 110   | 56 %     | 0.8 %       |
+| CTF  | 4v4  | Veteran    | 20      | **85 %**                               | 643 s      | 148   | 54 %     | 2.0 %       |
+| CTF  | 6v6  | Recruit    | 3       | 100 %                                  | 519 s      | 143   | 41 %     | 1.0 %       |
+| CTF  | 6v6  | Soldier    | 3       | 67 %                                   | 680 s      | 221   | 57 %     | 0.7 %       |
+| CTF  | 6v6  | Veteran    | 3       | 67 %                                   | 680 s      | 249   | 56 %     | 1.4 %       |
+| TDM  | 2v2  | Recruit    | 6       | 100 %                                  | 314 s      | 47    | 36 %     | 1.8 %       |
+| TDM  | 2v2  | Soldier    | 6       | 100 %                                  | 321 s      | 44    | 58 %     | 0.0 %       |
+| TDM  | 2v2  | Veteran    | 6       | 100 %                                  | 301 s      | 46    | 55 %     | 0.9 %       |
+| TDM  | 4v4  | Recruit    | 6       | 100 %                                  | 113 s      | 42    | 38 %     | 0.0 %       |
+| TDM  | 4v4  | Soldier    | 6       | 100 %                                  | 153 s      | 46    | 56 %     | 0.0 %       |
+| TDM  | 4v4  | Veteran    | 6       | 100 %                                  | 126 s      | 45    | 60 %     | 0.0 %       |
+| TDM  | 6v6  | Recruit    | 6       | 100 %                                  | 81 s       | 44    | 38 %     | 4.5 %       |
+| TDM  | 6v6  | Soldier    | 6       | 100 %                                  | 87 s       | 44    | 58 %     | 0.0 %       |
+| TDM  | 6v6  | Veteran    | 6       | 100 %                                  | 80 s       | 44    | 56 %     | 0.0 %       |
+| FFA  | 4    | Recruit    | 12      | 100 %                                  | 421 s      | 47    | 37 %     | 2.5 %       |
+| FFA  | 4    | Soldier    | 12      | 83 %                                   | 444 s      | 46    | 56 %     | 1.2 %       |
+| FFA  | 4    | Veteran    | 12      | 100 %                                  | 379 s      | 45    | 55 %     | 2.2 %       |
+| FFA  | 6    | Recruit    | 6       | 100 %                                  | 310 s      | 60    | 35 %     | 1.5 %       |
+| FFA  | 6    | Soldier    | 6       | 100 %                                  | 318 s      | 60    | 53 %     | 1.8 %       |
+| FFA  | 6    | Veteran    | 6       | 100 %                                  | 305 s      | 63    | 54 %     | 1.6 %       |
+| FFA  | 8    | Recruit    | 6       | 100 %                                  | 267 s      | 74    | 35 %     | 2.3 %       |
+| FFA  | 8    | Soldier    | 6       | 100 %                                  | 298 s      | 85    | 54 %     | 1.8 %       |
+| FFA  | 8    | Veteran    | 6       | 100 %                                  | 250 s      | 76    | 54 %     | 1.9 %       |
+
+Mixed TDM 4v4, Veteran against Recruit: the Veteran team won **20 of 20** (10 as blue, 10 as
+red), ~107 s, accuracy 62 % against 29 %, worst stuck 4.3 %.
+
+`Game.step` with 12 bots, single process: TDM 6v6 Veteran **avg 0.54 ms, p99 5.95 ms**, TDM 6v6
+Recruit avg 0.52 / p99 5.46 ms, CTF 6v6 Soldier avg 0.28 / p99 3.60 ms. The single worst ticks
+(19–35 ms) are the first ticks (JIT) and garbage collections. The A* budget is the p99: a full
+2000-node tick costs ~5 ms.
+
+| Done when (§4)                                   | Measured                      |      |
+| ------------------------------------------------ | ----------------------------- | ---- |
+| CTF 4v4 Veteran: ≥ 80 % with a capture ≤ 10 min  | 85 % (17/20)                  | pass |
+| TDM and FFA end by score in ≥ 70 %               | 83–100 % in every size/level  | pass |
+| Stuck < 5 % per bot                              | worst bot 4.5 %, mean ≤ 0.4 % | pass |
+| `Game.step`, 12 bots: avg < 4 ms, p99 < 12 ms    | 0.54 ms / 5.95 ms             | pass |
+| Veteran beats Recruit in ≥ 80 % of mixed TDM 4v4 | 100 % (20/20)                 | pass |
+
+**What was tuned, and why.** Lane oscillation (a waypoint that un-reached itself) gave red twice
+blue's time at the enemy base; lanes are now stateful and mirror-exact, and the CTF wins are
+no longer one-sided (blue 40 %, red 25 % over the last 20; was 1 against 6). Aim error floor raised from 12 % to half the starting error
+(≤ 1°): with near-perfect veterans no carrier survived the run home (0 captures). Rushes timed
+to the respawn waves (taking the flag late in a wave fed carriers to the next one) and paired.
+Recruits close to half the effective range before fighting (they have no sights), which took
+FFA 4 from 0 % to 100 % by score. TDM roaming leans toward the enemy half. Stuck progress is
+measured over the ground (a hop on the spot used to count as progress and blocked digging),
+and an early hop after 8 ticks pushing in place.
+
+**Decisions where the spec stopped.**
+
+- Hearing tells an enemy's shot from an ally's (the bot knows where its allies are).
+- "Reserve < 30 %" reads the primary's rounds (magazine + reserve) against its maximum.
+- Reload when nothing was seen for 1 s and the magazine is under 60 %, or at 0 (automatic).
+- Grenades: only the quick throw (G), at 11–26 blocks, pitch solved for the arc, never while
+  rushing or carrying, not near allies; Soldier takes 35 % of the chances, Veteran all.
+- Strafing stops at ledges and water; Recruits stand and shoot.
+- The sniper: Veteran only, ≤ 1 per team (in FFA every bot is red, so ≤ 1 overall); shotgun
+  weighted for defenders. The first life's primary is picked when the bot is created (before the
+  harness reseeds, so first-life loadouts repeat across bench variants).
+- No route to a hunch (noise, lost enemy, hotspot) drops it instead of walking into terrain; an
+  objective with no route is walked straight at, and the stuck rules dig.
+- Bots also shoot spawn-protected enemies (no damage); bots never build, place TNT or ladders,
+  use the pistol only with the primary empty and never melee with the shovel.
+- `modes.test.ts` (S1 rule tests) now holds bots still with idle external frames; they had
+  relied on bots that did nothing.
+
+**Found, not fixed (outside S2).** `physics/sweep.ts`: a box resting exactly on a voxel boundary
+(every wall collision snaps it there) that walks back across it while on the ground is stopped
+dead: the `CORNER_EPSILON` of the gravity axis puts the floor row into the x/z plane test at
+t = 0. Players (humans too) snag after sliding round a corner until they jump. Bots hop out of
+it after 8 ticks.
+
+**Numbers.** Sim worker 79.1 KB (28.2 KB gzip, was 50.9 / 17.8); the A* node table (2.75 MB)
+is allocated on the first search. Tests: `src/bots/*.test.ts` were written from §4 by the same
+session that wrote the bots, with the code in context (noted in the files).
+
+## Final fixes — corner sweep and TDM target (2026-11-13)
+
+Two fixes on top of S1–S3. Checks green: typecheck, lint, format, `check:qa-absent`, build,
+**324 sim tests** (+21: 16 sweep, 2 player controller, a net 3 in modes) and the client's 36. No commit.
+
+**Corner sweep (`physics/sweep.ts`).** Cause: a box resting on the floor (min y exactly 0)
+whose leading face sits exactly on a voxel boundary has two crossings at t = 0, its own and
+the floor's (gravity pushes −y every tick). The sweep picked the lowest axis index first, so
+X was tested before Y, and the `CORNER_EPSILON` that widens the other axes into the voxel they
+are about to enter put the floor row (y = −1) into the X slice: the floor counted as a wall.
+Every wall collision snaps the box onto a boundary, so after sliding along a wall a player
+could not walk round its end on X until they jumped. Z was spared only because Y (index 1)
+was resolved before Z (index 2).
+
+Fix: at each crossing time the axes that cross together are resolved as a set. Each is first
+tested against its own slice, with the leading side taken from `leadVoxel` (the voxel the face
+is in, so a face resting on a boundary is not taken as past it); one that is blocked collides
+first, so the floor stops Y and X carries on. Only when none is blocked on its own is the
+diagonal voxel tested (the old epsilon slice), so the box still cannot slip through a corner.
+All crossing axes then advance together. The existing AABB tests (corners, ledge, ceiling,
+high-speed tunnel, edge-on jump) pass unchanged.
+
+Tests, written from the expected behaviour before reading the sweep (the scenario was known
+from S2's note): `sweep.test.ts` gets 16, one wall mapped onto ±X and ±Z — push diagonally
+along the wall and round its end, slide past the end and turn in, walk back away from it,
+and cross back over a boundary the far side of the wall snapped the box to, always on the
+floor with gravity and never leaving it. `player-controller.test.ts` gets 2: the same corner
+through `stepPlayer` on ±X with no jump. With the old sweep 6 + 2 of them fail (all the X
+ones); with the new one all pass.
+
+**TDM target.** Decided by Jhon: **10 kills per player per team** (2v2 20, 3v3 30, 4v4 40,
+6v6 60), same 8 min and draw rule; FFA stays at 15. `rules/modes.ts`: `scoreToWin(mode,
+teamSize)` and `rosterTeamSize(players)` (the larger side of the configured roster, so a QA
+dummy added later does not move it); `MODES` keeps only the clock. The `Game` fixes
+`scoreToWin` at construction, `scoreStatus` takes it as an argument and the snapshot's
+`match.scoreToWin` carries it. Client: the HUD already read the snapshot (`TopBar`, through
+`hudState.scoreToWin`, whose placeholder is now 0 instead of 25); the end panel shows no
+target. The menu card was a fixed text: it now reads «Gana el primero en llegar a {n} bajas
+(10 por jugador)» / "The first to {n} kills wins (10 per player)" with `n` from the sim's rule
+for the chosen size (`modeTarget` in `settings/match-setup.ts`); FFA's card takes `n` the same
+way. `modes.test.ts`: the target per size in the snapshot, the first team to 20 (2v2) and to 30
+(3v3) wins, FFA 15 for 4/6/8 players. `docs/final-scope.md` §2 (and the "meta 25" in §5)
+updated.
+
+**Harness, before → after.** Before = the old sweep and TDM to 25; after = both fixes. Same
+match variants, runs in parallel (timing columns not comparable; see below).
+
+| Run             | Matches (before / after) | Ends by score / capture ≤ 10 min | Avg length  | Stuck mean  | Worst bot   |
+| --------------- | ------------------------ | -------------------------------- | ----------- | ----------- | ----------- |
+| CTF 4v4 Veteran | 40 / 40                  | 87.5 % → 82.5 %                  | 630 → 630 s | 0.2 → 0.1 % | 6.5 → 2.2 % |
+| TDM 4v4 Veteran | 10 / 30                  | 100 % → 100 %                    | 130 → 206 s | 0.0 → 0.1 % | 3.1 → 2.7 % |
+| FFA 6 Soldier   | 10 / 10                  | 100 % → 100 %                    | 338 → 355 s | 0.1 → 0.1 % | 1.8 → 1.8 % |
+| FFA 6 Veteran   | 10 / 10                  | 100 % → 100 %                    | 300 → 299 s | 0.1 → 0.1 % | 1.6 → 1.8 % |
+| TDM 2v2 Soldier | 10 / 30                  | 100 % → 100 %                    | 323 → 256 s | 0.1 → 0.0 % | 1.7 → 2.0 % |
+| TDM 4v4 Soldier | 10 / 30                  | 100 % → 100 %                    | 145 → 224 s | 0.0 → 0.0 % | 0.0 → 2.0 % |
+| TDM 6v6 Soldier | 10 / 30                  | 100 % → 100 %                    | 88 → 220 s  | 0.1 → 0.0 % | 6.0 → 2.1 % |
+
+- TDM with the new target lasts **256 s (2v2, 20 kills), 224 s (4v4, 40) and 220 s (6v6, 60)**
+  on Soldier, ~37 / 74 / 113 kills per match, all by score, well inside the 8 min.
+- CTF 4v4 Veteran stays above the 80 % bar. The first 20 variants after the fix gave 70 % and
+  the next 20 gave 95 % (before: 85 % and 90 %): any change to the physics reshuffles the
+  matches, and 20 is too few to read a 5-point move.
+- TDM teams: over the first 10 variants blue won 1 of 10 in 4v4 Veteran and 6v6 Soldier
+  after the fix (the old sweep with the new target: 6 and 7 of 10); over the next 20 it won
+  9–10 of 20 in every size. A long race to 40–60 turns a small per-variant edge into a sweep
+  of wins; kills over the first 10 6v6 matches were 550 blue against 597 red, no suicides.
+- `Game.step` with 12 bots, single process: TDM 6v6 Veteran avg **0.51 ms, p99 5.58 ms**.
+
+**The bots' early hop.** Measured with the hop after 8 ticks pushing in place switched off:
+
+| Without the hop | Old sweep: stuck mean / worst | New sweep: stuck mean / worst |
+| --------------- | ----------------------------- | ----------------------------- |
+| CTF 4v4 Veteran | 1.1 % / 5.3 %                 | 0.8 % / 40.5 %                |
+| FFA 6 Soldier   | 0.8 % / 5.9 %                 | 0.1 % / 1.8 %                 |
+| TDM 4v4 Soldier | 0.2 % / 3.6 %                 | 0.0 % / 2.0 %                 |
+
+With the fix the hop no longer changes FFA (the run is identical with and without it) and
+barely TDM, so the corner snag was what it caught there. In CTF one bot still spends 40 % of
+its life stuck without it: there is another snag (not found here) that the 2 s jump, 3 s dig
+and 5 s reroute do not clear on their own. The hop stays.
+
+## Final QA (2026-11-13) — offline release candidate
+
+Browser QA on the dev server (`?qa=1`) and on the production preview, with a visible Chrome tab.
+
+- **Menu:** three modes, size, difficulty and primary. The TDM card shows the size-based target (4v4 → 40 kills, "10 per player").
+- **TDM 4v4 Soldier, first 20 s:** every bot moved 8–40 blocks; 64 shots, 36 hits, 5 deaths and 1 chest looted. Bot names show in the feed; the compass marks chests.
+- **FFA 6 Veteran, 25 s:** the top bar shows rank, own kills, the leader and the target of 15; 5 deaths and 2 loots.
+- **CTF 4v4 Veteran:** a bot took the flag within 38 s.
+- **Performance, TDM 6v6 Veteran (12 players), Chrome, Mac, DPR 2:**
+  - 59.7 fps average, p50 16.7 ms, p99 18.7 ms, 2 of 600 frames over 20 ms (worst 49.7 ms);
+  - sim step 0.77 ms average.
+- **Production preview:**
+  - the menu appears at 2.2 s, with 412 KB transferred;
+  - `window.blockfront` is absent even with `?qa=1`;
+  - Open Graph tags are present and the console has no errors;
+  - the pause panel has no primary selector.
+- **Flaky test fixed:** `behaviour.test.ts` › "the sniper only on Veteran…" builds 36 worlds. It takes ~3 s alone and timed out in the parallel suite, so it now has an explicit 20 s timeout.
+- **LICENSE:** the third-party section, copied from the museum, now points to `assets/CREDITS.md` (all CC0).
+- **Checks:** typecheck, lint, 324 sim tests and 36 client tests (all twice), format, `check:qa-absent` and the deploy dry-run are green.
+
+**Left for Jhon:**
+
+- Play once by hand: the real click on Play captures the mouse, and P resumes.
+- Record a gameplay GIF for the README.
+- Commit.
+- Deploy following `docs/deploy.md`.

@@ -8,6 +8,9 @@ import manifest from './gun-manifest.json'
 
 type Layer = 'own' | 'near' | 'mid' | 'far' | 'tail' | 'mech'
 type Bus = 'own' | 'enemies' | 'impacts' | 'world' | 'ui'
+// Entity id for fuse hisses; they share one panner, which the last primed TNT repositions.
+const FUSE_ENTITY = -7
+const CHEST_ENTITY = -8
 
 interface WeaponClips {
   own: string[]
@@ -39,6 +42,8 @@ const EXTRAS = manifest.extras as Record<string, string[]>
 const LIMITS = { own: 8, perEnemy: 3, global: 40 }
 const LOCAL = -1
 const DB = (db: number) => Math.pow(10, db / 20)
+// Overall level: the playtest found everything too loud. The settings scale it.
+const MASTER_LEVEL = DB(-7)
 const SPEED_OF_SOUND = 343
 
 function pick(list: string[], last: Map<string, number>, key: string): string | null {
@@ -56,6 +61,9 @@ export class GunAudio {
   private readonly buses: Record<Bus, GainNode>
   private readonly sends: Record<Bus, GainNode>
   private readonly master: GainNode
+  // Settings groups: the gun buses (shots, impacts, clicks) and the world bus (fuses, chests).
+  private readonly weaponsGain: GainNode
+  private readonly worldGain: GainNode
   private readonly convolver: ConvolverNode
   private readonly entities = new Map<number, Entity>()
   private readonly voices = new Set<Voice>()
@@ -79,17 +87,27 @@ export class GunAudio {
     limiter.release.value = 0.05
     limiter.knee.value = 0
     this.master = context.createGain()
-    // Overall level: the playtest found everything too loud.
-    this.master.gain.value = DB(-7)
+    this.master.gain.value = MASTER_LEVEL
     this.master.connect(compressor).connect(limiter).connect(context.destination)
+    this.weaponsGain = context.createGain()
+    this.weaponsGain.connect(this.master)
+    this.worldGain = context.createGain()
+    this.worldGain.connect(this.master)
 
-    const bus = () => {
+    const bus = (group: GainNode) => {
       const g = context.createGain()
       g.gain.value = DB(-6)
-      g.connect(this.master)
+      g.connect(group)
       return g
     }
-    this.buses = { own: bus(), enemies: bus(), impacts: bus(), world: bus(), ui: bus() }
+    const weapons = this.weaponsGain
+    this.buses = {
+      own: bus(weapons),
+      enemies: bus(weapons),
+      impacts: bus(weapons),
+      world: bus(this.worldGain),
+      ui: bus(weapons),
+    }
 
     // One shared reverb: pre-delay then the impulse, fed by per-bus sends.
     this.convolver = context.createConvolver()
@@ -134,6 +152,14 @@ export class GunAudio {
     )
     const ir = this.buffers.get('ir-garage')
     if (ir) this.convolver.buffer = ir
+  }
+
+  // Settings, each 0..1: general, then the weapons and world groups under it.
+  setVolumes(master: number, weapons: number, world: number): void {
+    const now = this.context.currentTime
+    this.master.gain.setTargetAtTime(MASTER_LEVEL * master, now, 0.02)
+    this.weaponsGain.gain.setTargetAtTime(weapons, now, 0.02)
+    this.worldGain.gain.setTargetAtTime(world, now, 0.02)
   }
 
   // 0 = open field, 1 = fully enclosed; drives the reverb send.
@@ -250,6 +276,116 @@ export class GunAudio {
     }
     this.thump(now, 45, 0.5, Math.max(0.2, 1 - distance / 30))
     this.duck()
+  }
+
+  // Primed TNT: a hiss of filtered noise with a crackle, placed at the block, for the fuse.
+  fuse(x: number, y: number, z: number, distance: number, seconds: number): void {
+    if (distance > 40) return
+    const now = this.context.currentTime
+    const noise = this.context.createBufferSource()
+    noise.buffer = this.noiseBuffer()
+    noise.loop = true
+    const band = this.context.createBiquadFilter()
+    band.type = 'bandpass'
+    band.frequency.value = 4200
+    band.Q.value = 0.8
+    const crackle = this.context.createGain()
+    // Amplitude modulation at ~14 Hz for the sputter.
+    const lfo = this.context.createOscillator()
+    lfo.type = 'square'
+    lfo.frequency.value = 14
+    const lfoGain = this.context.createGain()
+    lfoGain.gain.value = 0.35
+    lfo.connect(lfoGain).connect(crackle.gain)
+    crackle.gain.value = 0.65
+    const gain = this.context.createGain()
+    const level = 0.5 / (1 + distance / 6)
+    gain.gain.setValueAtTime(0.0001, now)
+    gain.gain.exponentialRampToValueAtTime(level, now + 0.05)
+    gain.gain.setValueAtTime(level, now + seconds - 0.1)
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + seconds)
+    const entity = this.entity(FUSE_ENTITY, x, y, z, distance)
+    noise.connect(band).connect(crackle).connect(gain)
+    if (distance < 2) gain.connect(this.buses.world)
+    else {
+      gain.connect(entity.panner)
+      entity.filter.connect(this.buses.world)
+    }
+    noise.start(now)
+    lfo.start(now)
+    noise.stop(now + seconds + 0.05)
+    lfo.stop(now + seconds + 0.05)
+  }
+
+  // A chest opening: a wooden creak (a falling sawtooth through a band-pass with a tremolo),
+  // the latch click and a soft two-note chime for the loot.
+  chestOpen(x: number, y: number, z: number, distance: number): void {
+    if (distance > 40) return
+    const now = this.context.currentTime
+    const level = 1 / (1 + distance / 6)
+    let out: AudioNode = this.buses.world
+    if (distance >= 2) {
+      const entity = this.entity(CHEST_ENTITY, x, y, z, distance)
+      entity.filter.connect(this.buses.world)
+      out = entity.panner
+    }
+
+    const creak = this.context.createOscillator()
+    creak.type = 'sawtooth'
+    creak.frequency.setValueAtTime(190, now)
+    creak.frequency.exponentialRampToValueAtTime(95, now + 0.32)
+    const band = this.context.createBiquadFilter()
+    band.type = 'bandpass'
+    band.frequency.value = 700
+    band.Q.value = 3
+    const tremolo = this.context.createOscillator()
+    tremolo.frequency.value = 23
+    const tremoloDepth = this.context.createGain()
+    tremoloDepth.gain.value = 0.5
+    const creakGain = this.context.createGain()
+    creakGain.gain.setValueAtTime(0.0001, now)
+    creakGain.gain.exponentialRampToValueAtTime(0.35 * level, now + 0.04)
+    creakGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.36)
+    tremolo.connect(tremoloDepth).connect(creakGain.gain)
+    creak.connect(band).connect(creakGain).connect(out)
+    creak.start(now)
+    tremolo.start(now)
+    creak.stop(now + 0.4)
+    tremolo.stop(now + 0.4)
+
+    const tone = (
+      at: number,
+      hz: number,
+      seconds: number,
+      volume: number,
+      type: OscillatorType,
+    ) => {
+      const osc = this.context.createOscillator()
+      osc.type = type
+      osc.frequency.value = hz
+      const gain = this.context.createGain()
+      gain.gain.setValueAtTime(0.0001, at)
+      gain.gain.exponentialRampToValueAtTime(volume * level, at + 0.008)
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + seconds)
+      osc.connect(gain).connect(out)
+      osc.start(at)
+      osc.stop(at + seconds + 0.02)
+    }
+    tone(now + 0.02, 1500, 0.03, 0.3, 'square')
+    tone(now + 0.3, 880, 0.35, 0.18, 'sine')
+    tone(now + 0.4, 1320, 0.45, 0.15, 'sine')
+  }
+
+  private noise: AudioBuffer | null = null
+
+  private noiseBuffer(): AudioBuffer {
+    if (this.noise) return this.noise
+    const length = this.context.sampleRate
+    const buffer = this.context.createBuffer(1, length, this.context.sampleRate)
+    const data = buffer.getChannelData(0)
+    for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1
+    this.noise = buffer
+    return buffer
   }
 
   casing(x: number, y: number, z: number, distance: number, entity: number): void {

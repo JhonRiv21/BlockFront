@@ -2,7 +2,7 @@ import { WORLD_SIZE } from '../config.ts'
 import type { Vec3 } from '../physics/sweep.ts'
 import { CTF, enemyOf, inBase, matchStatus, withinFlag, type FlagEntity } from '../rules/ctf.ts'
 import { createWeaponState } from '../combat/weapon-state.ts'
-import { BLOCKS, GRENADE, PLAYER_HP, WEAPONS } from '../combat/weapons.ts'
+import { BLOCKS, GRENADE, ITEMS, PLAYER_HP, WEAPONS } from '../combat/weapons.ts'
 import { TICK_RATE } from '../config.ts'
 import { BLOCK } from '../world/blocks.ts'
 import type { World } from '../world/world.ts'
@@ -114,11 +114,11 @@ export function stepCtf(ctx: MatchContext): void {
   if (status.state === 'ended' && ctx.match.winner === null) {
     ctx.match.winner = status.winner
     ctx.match.endTick = ctx.tick
-    ctx.events.push({ type: 'matchEnd', winner: status.winner ?? 'none' })
+    ctx.events.push({ type: 'matchEnd', winner: status.winner ?? 'none', winnerPlayer: 0 })
   }
 }
 
-// Inside the own base: spawn protection holds, and every 15 s hp, blocks, grenades and ammo
+// CTF and TDM, inside the own base: spawn protection holds, and every 15 s hp, blocks, grenades and ammo
 // come back. Stepping out of the base ends the protection.
 export function stepBase(ctx: MatchContext, player: PlayerEntity): void {
   const home = ctx.flags[player.config.team].home
@@ -131,6 +131,9 @@ export function stepBase(ctx: MatchContext, player: PlayerEntity): void {
     player.hp < PLAYER_HP ||
     player.blocks < BLOCKS.max ||
     player.grenades < GRENADE.perLife ||
+    player.tnt < ITEMS.tnt.perLife ||
+    player.ladders < ITEMS.ladder.perLife ||
+    player.bandages < ITEMS.bandage.start ||
     player.weapon.mag + player.weapon.reserve <
       WEAPONS[player.weapon.weapon].magazine + WEAPONS[player.weapon.weapon].reserve ||
     player.pistol.mag + player.pistol.reserve < WEAPONS.pistol.magazine + WEAPONS.pistol.reserve
@@ -139,6 +142,10 @@ export function stepBase(ctx: MatchContext, player: PlayerEntity): void {
   player.hp = PLAYER_HP
   player.blocks = BLOCKS.max
   player.grenades = GRENADE.perLife
+  player.tnt = ITEMS.tnt.perLife
+  player.ladders = ITEMS.ladder.perLife
+  // Chest bandages above the starting one are kept.
+  player.bandages = Math.max(player.bandages, ITEMS.bandage.start)
   player.weapon = createWeaponState(player.weapon.weapon)
   player.pistol = createWeaponState('pistol')
   ctx.events.push({ type: 'restock', player: player.config.id })

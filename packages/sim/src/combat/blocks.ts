@@ -1,9 +1,14 @@
 import { WORLD_SIZE } from '../config.ts'
 import type { Vec3 } from '../physics/sweep.ts'
-import { BLOCK } from '../world/blocks.ts'
+import { BLOCK, isLadder } from '../world/blocks.ts'
 import type { World } from '../world/world.ts'
 
 export const BLOCK_HP = 100
+
+// A ladder breaks at the first touch.
+export function maxBlockHp(id: number): number {
+  return isLadder(id) ? 1 : BLOCK_HP
+}
 
 function blockIndex(x: number, y: number, z: number): number {
   return x + y * WORLD_SIZE.x + z * WORLD_SIZE.x * WORLD_SIZE.y
@@ -20,7 +25,7 @@ export class BlockHealth {
   }
 
   get(x: number, y: number, z: number): number {
-    return this.hp.get(blockIndex(x, y, z)) ?? BLOCK_HP
+    return this.hp.get(blockIndex(x, y, z)) ?? maxBlockHp(this.world.getBlock(x, y, z))
   }
 
   // Returns true when the block broke (and was turned into air).
@@ -28,7 +33,7 @@ export class BlockHealth {
     const id = this.world.getBlock(x, y, z)
     if (id === BLOCK.air || id === BLOCK.bedrock) return false
     const key = blockIndex(x, y, z)
-    const left = (this.hp.get(key) ?? BLOCK_HP) - amount
+    const left = (this.hp.get(key) ?? maxBlockHp(id)) - amount
     if (left > 0) {
       this.hp.set(key, left)
       return false

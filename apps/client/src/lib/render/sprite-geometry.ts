@@ -186,3 +186,71 @@ export const GRENADE_ART: SpriteArt = {
   ],
   palette: { o: 0x1b2416, g: 0x4a6b3a, d: 0x3a5530, s: 0x8d949c, x: 0xb8bec6, m: 0xd9d4a8 },
 }
+
+export const TNT_ART: SpriteArt = {
+  rows: [
+    '................',
+    '......f.........',
+    '.....ff.........',
+    '....ff..........',
+    '...rrrrrrrrrr...',
+    '...rddrrrrddr...',
+    '...rrrrrrrrrr...',
+    '...wwwwwwwwww...',
+    '...wkwwkkwwkw...',
+    '...wkwwwkwwkw...',
+    '...wwwwwwwwww...',
+    '...rrrrrrrrrr...',
+    '...rddrrrrddr...',
+    '...rrrrrrrrrr...',
+    '................',
+    '................',
+  ],
+  palette: { r: 0xc8372d, d: 0x8f2419, w: 0xe9e4d6, k: 0x1d1d1d, f: 0xf2b134 },
+}
+
+export const LADDER_ART: SpriteArt = {
+  rows: [
+    '....w......w....',
+    '....w......w....',
+    '....wwwwwwww....',
+    '....w......w....',
+    '....w......w....',
+    '....wwwwwwww....',
+    '....w......w....',
+    '....w......w....',
+    '....wwwwwwww....',
+    '....w......w....',
+    '....w......w....',
+    '....wwwwwwww....',
+    '....w......w....',
+    '....w......w....',
+    '....wwwwwwww....',
+    '....w......w....',
+  ],
+  palette: { w: 0xa3743f },
+}
+
+// A rolled bandage: a cream roll with its spiral end on the left, a red stripe along it and
+// the loose end hanging on the right.
+export const BANDAGE_ART: SpriteArt = {
+  rows: [
+    '................',
+    '................',
+    '................',
+    '.....wwwwwwww...',
+    '...ewwwwwwwwwwd.',
+    '..eeewwwwwwwwwd.',
+    '.esssewwwwwwwwd.',
+    '.eseserrrrrrrrd.',
+    '.esssewwwwwwwwd.',
+    '..eeewwwwwwwwwdw',
+    '...ewwwwwwwwwwdw',
+    '.....wwwwwwwwdww',
+    '.............wwd',
+    '..............wd',
+    '................',
+    '................',
+  ],
+  palette: { w: 0xf3ecdc, d: 0xc4b89e, e: 0xd8ccb2, s: 0x9c8e72, r: 0xd94040 },
+}

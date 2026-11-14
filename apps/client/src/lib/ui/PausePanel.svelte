@@ -1,32 +1,40 @@
 <script lang="ts">
   import { hudState } from './hud-state.svelte.ts'
   import { t } from '../i18n/locale.svelte.ts'
-  import { itemLabel, PRIMARIES } from './labels.ts'
+  import { itemLabel } from './labels.ts'
+  import { PRIMARIES } from '../settings/match-setup.ts'
+  import ChoiceButton from './ChoiceButton.svelte'
 </script>
 
 <div
-  class="absolute top-24 left-1/2 flex -translate-x-1/2 flex-col items-center gap-3 rounded-md bg-hud-panel px-6 py-4 text-center"
+  class="absolute top-[40%] left-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-3 rounded-md bg-hud-panel px-7 py-5 text-center"
 >
-  <p class="text-2xl font-bold">{t('pause.title')}</p>
-  <p class="text-sm text-hud-muted">{t('pause.resume')}</p>
-  <!-- Loadout: a testing tool until F3; applies at once. -->
-  <span class="mt-1 text-xs text-hud-muted">{t('hud.primaryWeapon')}</span>
-  <div class="pointer-events-auto flex gap-1.5">
-    {#each PRIMARIES as weapon (weapon)}
-      <button
-        type="button"
-        class="rounded-md border-2 px-3 py-1.5 text-sm {weapon === hudState.weapon
-          ? 'border-hud bg-hud/90 font-semibold text-hud-ink'
-          : 'border-hud-muted/30 bg-hud-panel text-hud hover:border-hud'}"
-        onclick={() => hudState.selectPrimary(weapon)}>{itemLabel(weapon)}</button
-      >
-    {/each}
+  <p class="text-3xl font-bold">{t('pause.title')}</p>
+  <p class="text-base text-hud-muted">{t('pause.resume')}</p>
+  {#if import.meta.env.DEV}
+    <!-- Testing tool, dev builds only: the primary changes at once. -->
+    <span class="mt-1 text-sm text-hud-muted">{t('hud.primaryWeapon')} (dev)</span>
+    <div class="flex gap-1.5">
+      {#each PRIMARIES as weapon (weapon)}
+        <ChoiceButton
+          selected={weapon === hudState.weapon}
+          onclick={() => hudState.selectPrimary(weapon)}>{itemLabel(weapon)}</ChoiceButton
+        >
+      {/each}
+    </div>
+  {/if}
+  <div class="mt-1 flex gap-3">
+    <button
+      type="button"
+      class="pointer-events-auto rounded-md border-2 border-hud-muted/40 px-5 py-2 text-base hover:border-hud"
+      onclick={() => (hudState.settingsOpen = true)}>{t('menu.settings')}</button
+    >
+    <button
+      type="button"
+      class="pointer-events-auto rounded-md border-2 border-hud-muted/40 px-5 py-2 text-base hover:border-hud"
+      onclick={() => hudState.quitMatch()}>{t('pause.quit')}</button
+    >
   </div>
-  <button
-    type="button"
-    class="pointer-events-auto mt-1 rounded-md border-2 border-hud-muted/30 px-4 py-1.5 text-sm hover:border-hud"
-    onclick={() => hudState.quitMatch()}>{t('pause.quit')}</button
-  >
 </div>
 <div
   class="absolute bottom-28 left-1/2 -translate-x-1/2 rounded-md bg-hud-panel px-4 py-2 text-center text-sm text-hud-muted"

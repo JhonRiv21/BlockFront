@@ -9,6 +9,10 @@ una segunda entrega, en salas multijugador por link.
   **Solo mecánicas**: nada de nombres, mapas, modelos, sonidos ni código de esos juegos.
 - Costo recurrente objetivo: **$0** (Cloudflare Workers Free + assets CC0).
 
+> **Recorte del 2026-11-13 (Jhon):** se cierra la app **offline, solo contra bots**. Sin
+> multijugador ni servidor. El alcance vigente está en [`docs/final-scope.md`](docs/final-scope.md)
+> y reemplaza F3-C en adelante, F4 y F5. Lo de abajo queda como historia del diseño.
+
 ---
 
 ## 1. Decisiones cerradas
@@ -287,7 +291,7 @@ Auditoría contra el estándar (Poki, CrazyGames, guías de accesibilidad) en
   - Meta tags.
 - **Agregado tras F2.6 (aprobado por Jhon):**
   - Protección al aparecer.
-  - TNT y bloque reforzado.
+  - TNT. (El bloque reforzado se descartó el 2026-10-22: invitaba a convertir la bandera en búnker.)
   - Escalera de mano y botiquín.
   - Los bloques de un equipo solo los rompen los enemigos (decisión D3).
   - Diseño de cada uno en `docs/f2-6-feel.md` §6.
@@ -305,7 +309,7 @@ Auditoría contra el estándar (Poki, CrazyGames, guías de accesibilidad) en
   | Parte | Contenido |
   |---|---|
   | **A, reglas y flujo de partida** | CTF completo (banderas, capturas, oleadas de 8 s, recarga y curación en base, anti-grief), elección de arma solo al aparecer, protección al aparecer y bloques de equipo que solo rompen los enemigos (D3). Marcador con Tab, pantalla de muerte, nameplates de aliados, portador visible para su equipo, brújula y fin de partida. Antes de agregar UI, **dividir `Hud.svelte` en componentes** (menú, pausa, HUD de juego, overlays). Los nombres dejan de inyectarse localizados en la config |
-  | **B, ítems nuevos** | TNT, bloque reforzado, escalera de mano (anula la caída) y botiquín, según el §6 de `docs/f2-6-feel.md` |
+  | **B, ítems nuevos** | TNT, escalera de mano (anula la caída) y botiquín (el bloque reforzado se descartó), según el §6 de `docs/f2-6-feel.md` |
   | **C, bots: núcleo** | Percepción, puntería humana, A* (caminar, saltar, caer y escaleras), roles, behavior trees, 3 dificultades y harness headless en Node |
   | **D, bots: construir y equilibrar** | Excavar, construir, usar TNT, defensas y balance con el harness |
   | **E, producto y entrega** | Menú completo, ajustes guardados con reasignación de teclas, i18n con selector, tutorial, pantalla «solo escritorio», accesibilidad básica, meta tags, carga con precalentado, smoke con Playwright y deploy (los comandos los ejecuta Jhon) |

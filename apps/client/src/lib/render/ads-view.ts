@@ -15,6 +15,9 @@ const DEG = Math.PI / 180
 // scaled by the same ratio, the scoped sniper's sway, and the hybrid scope: past 80 % the view
 // fades to black for 60 ms and the HUD overlay takes over.
 export class AdsView {
+  // Player settings: hip FOV in degrees and the extra sensitivity factor while aiming.
+  baseFov = DEFAULT_FOV
+  adsSensitivity = ADS_SENSITIVITY_ADJUST
   scoped = false
   scopeFade = 0
   private wasAiming = false
@@ -40,12 +43,12 @@ export class AdsView {
       this.wasAiming = aiming
     }
     this.updateSway(tool, ads, dt)
-    const hipHalf = Math.tan((DEFAULT_FOV * Math.PI) / 360)
+    const hipHalf = Math.tan((this.baseFov * Math.PI) / 360)
     const adsHalf = Math.atan(hipHalf / zoom)
-    const fov = ((DEFAULT_FOV * Math.PI) / 360) * (1 - s) + adsHalf * s
+    const fov = ((this.baseFov * Math.PI) / 360) * (1 - s) + adsHalf * s
     this.camera.fov = (fov * 360) / Math.PI
     this.camera.updateProjectionMatrix()
-    this.input.lookScale = (Math.tan(fov) / hipHalf) * ADS_SENSITIVITY_ADJUST
+    this.input.lookScale = (Math.tan(fov) / hipHalf) * (1 + (this.adsSensitivity - 1) * s)
 
     const wantScope = isGun(tool) && ADS[tool].scope && ads >= SCOPE_THRESHOLD
     if (wantScope !== this.scoped) {

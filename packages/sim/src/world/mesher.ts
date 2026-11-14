@@ -1,5 +1,5 @@
 import { CHUNK_SIZE } from '../config.ts'
-import { FACE_LAYER, FLAG, FLAGS, isCross, isLiquid } from './blocks.ts'
+import { FACE_LAYER, FLAG, FLAGS, isCross, isLadder, isLiquid, LADDER_NORMAL } from './blocks.ts'
 
 // Input: the chunk plus a one-voxel border from its neighbours, so faces on the chunk edge are
 // culled and shaded exactly like interior ones. Coordinates run from -1 to CHUNK_SIZE.
@@ -261,6 +261,37 @@ function meshDecor(voxels: Uint8Array): DecorMesh {
     for (let y = 0; y < S; y++)
       for (let x = 0; x < S; x++) {
         const id = voxels[paddedIndex(x, y, z)] ?? 0
+        if (isLadder(id)) {
+          // One quad flush with the wall the ladder hangs on (the side opposite its normal),
+          // a sixteenth into the cell so it never z-fights with the wall.
+          const layer = FACE_LAYER[id * 6] ?? 0
+          const [nx, , nz] = LADDER_NORMAL[id] ?? [0, 0, 1]
+          const inset = 1 / 16
+          if (nx !== 0) {
+            const px = nx > 0 ? x + inset : x + 1 - inset
+            addQuad(
+              [
+                [px, y, z],
+                [px, y, z + 1],
+                [px, y + 1, z + 1],
+                [px, y + 1, z],
+              ],
+              layer,
+            )
+          } else {
+            const pz = nz > 0 ? z + inset : z + 1 - inset
+            addQuad(
+              [
+                [x, y, pz],
+                [x + 1, y, pz],
+                [x + 1, y + 1, pz],
+                [x, y + 1, pz],
+              ],
+              layer,
+            )
+          }
+          continue
+        }
         if (!isCross(id)) continue
         const layer = FACE_LAYER[id * 6] ?? 0
         addQuad(

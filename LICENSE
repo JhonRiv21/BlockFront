@@ -22,16 +22,11 @@ SOFTWARE.
 
 -------------------------------------------------------------------------------
 
-THIRD-PARTY 3D MODELS
+THIRD-PARTY ASSETS
 
-This license covers the source code only. It does NOT cover the 3D models in
-public/models/, which are the work of their original authors and institutions
-and remain under their own licenses (CC0 1.0 or CC BY 4.0).
-
-The source, author and license of every model are listed in assets/pieces.json
-and shown on each piece's label inside the museum. The models were simplified
-and compressed for the web.
-
-Anyone reusing a CC BY 4.0 model must credit its original author, link to the
-license and indicate that changes were made, as that license requires. These
-attributions must be kept in any copy or derivative of this project.
+This license covers the source code only. The models and sounds in
+apps/client/public/ are the work of their original authors and keep their own
+licenses. Every third-party asset is CC0 1.0 (public domain); its author, source
+and license are listed in assets/CREDITS.md. Assets made for this project (the
+procedural weapons, textures and synthesized sounds) are covered by this
+license.

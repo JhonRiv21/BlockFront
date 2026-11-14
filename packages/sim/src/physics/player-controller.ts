@@ -1,6 +1,7 @@
 import { sweepAabb, type Aabb, type SolidTest, type Vec3 } from './sweep.ts'
 import { FALL } from './fall.ts'
 import { pointInWater, submergedRatio, type LiquidTest } from './water.ts'
+import { ITEMS } from '../combat/weapons.ts'
 
 export const PLAYER = {
   width: 0.6,
@@ -55,6 +56,7 @@ export interface PlayerState {
   crouching: boolean
   eyeHeight: number
   inWater: boolean
+  onLadder: boolean
   submerged: number
   eyeInWater: boolean
   // Highest point since the feet left the ground, and the height of the fall on the tick the
@@ -72,6 +74,7 @@ export function createPlayer(pos: Vec3): PlayerState {
     eyeHeight: PLAYER.eyeHeight,
     inWater: false,
     submerged: 0,
+    onLadder: false,
     eyeInWater: false,
     peakY: pos[1],
     landedFrom: 0,
@@ -106,6 +109,7 @@ export function stepPlayer(
   isSolid: SolidTest,
   dt: number,
   isLiquid: LiquidTest = NO_LIQUID,
+  isClimbable: LiquidTest = NO_LIQUID,
 ): void {
   // Both heights fit under the same whole-block ceilings, so standing up needs no headroom check.
   state.crouching = input.crouch
@@ -114,6 +118,7 @@ export function stepPlayer(
   state.submerged = submergedRatio(playerAabb(state), isLiquid)
   state.inWater = state.submerged > 0.1
   state.landedFrom = 0
+  state.onLadder = false
   if (state.inWater) {
     swim(state, input, isSolid, isLiquid, dt)
     // Touching water forgives the fall.
@@ -139,25 +144,51 @@ export function stepPlayer(
   state.vel[0] += (moveX * speed - state.vel[0]) * blend
   state.vel[2] += (moveZ * speed - state.vel[2]) * blend
 
-  if (input.jump && state.onGround) {
-    state.vel[1] = PLAYER.jumpSpeed
-    state.onGround = false
+  // Ladder: the body overlaps a ladder cell. Forward or jump climbs, crouch holds, otherwise a
+  // slow slide; no gravity and no fall to account for (Minecraft).
+  const onLadder = overlapsClimbable(isClimbable, playerAabb(state))
+  state.onLadder = onLadder
+  if (onLadder) {
+    state.vel[0] *= ITEMS.ladder.climbWalkFactor
+    state.vel[2] *= ITEMS.ladder.climbWalkFactor
+    if (input.forward > 0 || input.jump) state.vel[1] = ITEMS.ladder.climbSpeed
+    else if (input.crouch) state.vel[1] = 0
+    else state.vel[1] = -ITEMS.ladder.slideSpeed
+    state.peakY = state.pos[1]
+  } else {
+    if (input.jump && state.onGround) {
+      state.vel[1] = PLAYER.jumpSpeed
+      state.onGround = false
+    }
+    state.vel[1] = Math.max(state.vel[1] - PLAYER.gravity * dt, -PLAYER.maxFallSpeed)
   }
-  state.vel[1] = Math.max(state.vel[1] - PLAYER.gravity * dt, -PLAYER.maxFallSpeed)
 
   const box = playerAabb(state)
   const wasOnGround = state.onGround
-  if (!wasOnGround) state.peakY = Math.max(state.peakY, state.pos[1])
-  else state.peakY = state.pos[1]
+  if (onLadder || wasOnGround) state.peakY = state.pos[1]
+  else state.peakY = Math.max(state.peakY, state.pos[1])
   let dx = state.vel[0] * dt
   let dz = state.vel[2] * dt
   // Sneaking: the box may not leave an edge with a drop of more than half a block. Each axis is
   // trimmed on its own, like Minecraft.
   if (state.crouching && wasOnGround) {
-    dx = sneakClamp(isSolid, box, dx, 0)
-    dz = sneakClamp(isSolid, box, 0, dz)
+    const cx = sneakClamp(isSolid, box, dx, 0)
+    const cz = sneakClamp(isSolid, box, 0, dz)
+    // A trimmed axis also loses its momentum, or letting go of crouch would carry the box over.
+    if (cx !== dx) state.vel[0] = 0
+    if (cz !== dz) state.vel[2] = 0
+    dx = cx
+    dz = cz
   }
-  const hit = sweepAabb(isSolid, box, [dx, state.vel[1] * dt, dz])
+  // On a ladder the body is flush against the wall it hangs on: a diagonal sweep would read
+  // the push into the wall as a hit on the way up, so the climb is swept on its own.
+  const hit = onLadder
+    ? (() => {
+        const sideways = sweepAabb(isSolid, box, [dx, 0, dz])
+        const vertical = sweepAabb(isSolid, box, [0, state.vel[1] * dt, 0])
+        return { x: sideways.x, y: vertical.y, z: sideways.z }
+      })()
+    : sweepAabb(isSolid, box, [dx, state.vel[1] * dt, dz])
   // Safety net: if anything ever left the box inside a block, lift it to the first free spot.
   for (let lift = 0; lift < 3 && overlapsSolid(isSolid, box); lift++) {
     box.min[1] = Math.floor(box.min[1]) + 1
@@ -190,6 +221,8 @@ export function stepPlayer(
 
 const SNEAK_DROP = 0.5
 const SNEAK_STEP = 0.05
+// The box keeps at least this much of its footprint over the support, never the bare edge.
+const SNEAK_MARGIN = 0.05
 
 // Shrinks a horizontal move until the box, dropped by half a block, still rests on something.
 function sneakClamp(isSolid: SolidTest, box: Aabb, dx: number, dz: number): number {
@@ -200,10 +233,10 @@ function sneakClamp(isSolid: SolidTest, box: Aabb, dx: number, dz: number): numb
   for (;;) {
     const ox = dx !== 0 ? amount : 0
     const oz = dz !== 0 ? amount : 0
-    probe.min[0] = box.min[0] + ox
-    probe.max[0] = box.max[0] + ox
-    probe.min[2] = box.min[2] + oz
-    probe.max[2] = box.max[2] + oz
+    probe.min[0] = box.min[0] + ox + SNEAK_MARGIN
+    probe.max[0] = box.max[0] + ox - SNEAK_MARGIN
+    probe.min[2] = box.min[2] + oz + SNEAK_MARGIN
+    probe.max[2] = box.max[2] + oz - SNEAK_MARGIN
     probe.min[1] = box.min[1] - SNEAK_DROP
     probe.max[1] = box.min[1]
     if (overlapsSolid(isSolid, probe)) return amount
@@ -297,4 +330,14 @@ function swim(
     state.pos[2],
     isLiquid,
   )
+}
+
+// Any cell the box's centre column passes through is a ladder.
+function overlapsClimbable(isClimbable: LiquidTest, box: Aabb): boolean {
+  const x = Math.floor((box.min[0] + box.max[0]) / 2)
+  const z = Math.floor((box.min[2] + box.max[2]) / 2)
+  for (let y = Math.floor(box.min[1]); y < Math.ceil(box.max[1]); y++) {
+    if (isClimbable(x, y, z)) return true
+  }
+  return false
 }

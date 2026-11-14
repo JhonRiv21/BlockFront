@@ -6,9 +6,16 @@
   --color-hud-ink: oklch(0.2 0.02 260);
   --color-water-tint: oklch(0.45 0.16 262 / 0.22);
   --color-health-heart: oklch(0.62 0.22 25);
-  --color-hud-panel: oklch(0.18 0.02 260 / 0.55);
+  /* Opaque enough that muted text keeps 4.5:1 over the bright sky. */
+  --color-hud-panel: oklch(0.18 0.02 260 / 0.8);
+  --color-hud-solid: oklch(0.16 0.02 260);
   --color-team-blue: oklch(0.64 0.17 255);
   --color-team-red: oklch(0.63 0.2 25);
+  /* Team colours for text on the panel (4.5:1) and behind white text. */
+  --color-team-blue-ink: oklch(0.8 0.11 255);
+  --color-team-red-ink: oklch(0.79 0.12 25);
+  --color-team-blue-deep: oklch(0.42 0.14 258);
+  --color-loot: oklch(0.87 0.13 85);
   --color-health: oklch(0.72 0.17 150);
   --font-hud: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Roboto Mono', monospace;
 }

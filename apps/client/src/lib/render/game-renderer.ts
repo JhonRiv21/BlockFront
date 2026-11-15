@@ -224,8 +224,8 @@ export class GameRenderer {
   private showHitboxes = false
   private showStats = false
   private phase: Phase = 'menu'
-  // The sim worker is stopped: before the first lock of a match, on a hidden tab or after a fatal
-  // error. Esc and P only pause the player; the match keeps running behind the pause panel.
+  // The sim worker is stopped: paused, before the first lock of a match, on a hidden tab or after
+  // a fatal error. Dead or on the result screen the match keeps running with the pointer free.
   private frozen = false
   private wasAlive = true
   private lastSetup: MatchSetup | null = null
@@ -427,8 +427,8 @@ export class GameRenderer {
   }
 
   // Match lifecycle. The sim worker starts frozen and the pointer lock, which the Play click
-  // requests, starts it. Esc, P or a lost lock pause the player only: the bots keep playing, as
-  // in an online match. A hidden tab or a fatal error freezes the sim.
+  // requests, starts it. Esc, P, a lost lock, a hidden tab or a fatal error freeze it again: a
+  // single-player pause stops the whole match.
   startMatch(setup: MatchSetup): void {
     this.lastSetup = setup
     this.matchId++
@@ -459,11 +459,9 @@ export class GameRenderer {
 
   pause(): void {
     if (this.phase !== 'playing' || this.matchEnded()) return
-    this.setPhase('paused')
-    this.input.releaseLock()
+    this.freeze()
   }
 
-  // Stops the sim worker too: nobody is watching, or nothing can be drawn.
   private freeze(): void {
     if (this.phase === 'menu') return
     if (!this.frozen) this.transport.pause()
@@ -655,10 +653,6 @@ export class GameRenderer {
     if (this.phase === 'playing') {
       if (this.input.takePressed('KeyP')) this.pause()
       this.controls.readSlot()
-    }
-    // Paused but not frozen, the player still sends a frame per tick: standing still, with the
-    // keys released when the lock went.
-    if (this.phase === 'playing' || (this.phase === 'paused' && !this.frozen)) {
       const { steps } = this.inputClock.advance(elapsed)
       for (let i = 0; i < steps; i++) {
         this.transport.sendInput(this.controls.buildInput(this.mode === 'fly'))
@@ -793,12 +787,9 @@ export class GameRenderer {
     const me = snapshot.players.find((p) => p.id === LOCAL_PLAYER_ID) ?? null
     this.feedback.afterSnapshot(snapshot, me)
     this.entities.updateGlints(snapshot)
-    // Death and the end of the match free the pointer for their screens' buttons. The match ends
-    // even behind the pause panel, which then gives way to the result.
-    if (snapshot.match.state === 'ended' && this.buffer.previous?.match.state !== 'ended') {
+    // Death and the end of the match free the pointer for their screens' buttons.
+    if (snapshot.match.state === 'ended' && this.buffer.previous?.match.state !== 'ended')
       this.input.releaseLock()
-      if (this.phase === 'paused') this.setPhase('playing')
-    }
     if (me && !me.alive && this.wasAlive) this.input.releaseLock()
     if (me) this.wasAlive = me.alive
     this.updateLockOnClick()

@@ -1408,7 +1408,7 @@ Jhon played the deployed build on a weaker PC. This batch covers the screens and
 - **Stacked panels:**
   - **Cause:** the result screen freed the pointer, losing the pointer pauses the game, and the pause panel was drawn over the result. The same happened over the death screen after Esc.
   - **Now:** one panel at a time (result, then pause, then death), and the game cannot be paused once the match is over. The renderer no longer pauses when the pointer is freed on purpose.
-- **Pause:** Esc, P or a lost lock pause only the player, who stands still while the match keeps running behind the panel. A hidden tab, a fatal error or a lost WebGL context still freeze the sim worker (`freeze()`), as does the time before the first lock of a match.
+- **Pause:** a live pause (only the player stopped, bots playing behind the panel) was tried and reverted the same day. In a single-player match it gets the player killed in the settings, runs the TDM clock and can lose the flag. Esc, P, a lost lock, a hidden tab and a fatal error all freeze the sim worker (`freeze()`), and the pause panel dims the frozen frame so it reads as a pause and not a hang. Dead or on the result screen, the match keeps running with the pointer free.
 - **Death screen:**
   - **Pointer:** freed on death, so the weapon buttons can be clicked; keys 1–5 pick a weapon too.
   - **Selection:** the picked weapon now stays highlighted. Before, every snapshot overwrote `menuPrimary` with the current weapon, so the buttons seemed dead even though the choice applied.
@@ -1416,7 +1416,7 @@ Jhon played the deployed build on a weaker PC. This batch covers the screens and
 - **Play again:** the result screen has the same weapon picker, and the restart uses it (`restartMatch(primary)`).
 - **Checked:**
   - **QA in the browser (`?qa=1`):**
-    - in 2 s of pause the sim advanced 60 ticks;
+    - in 2 s of pause the sim stays on the same tick;
     - with the player dead, the pause hides the death screen and resuming brings it back;
     - a click on Shotgun stays pressed;
     - the player respawns with the shotgun.

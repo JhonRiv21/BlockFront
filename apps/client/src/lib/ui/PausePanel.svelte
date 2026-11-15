@@ -6,6 +6,8 @@
   import ChoiceButton from './ChoiceButton.svelte'
 </script>
 
+<!-- Dims the frozen frame so it reads as a pause, not a hang. -->
+<div class="absolute inset-0 bg-black/45"></div>
 <div
   class="absolute top-[40%] left-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-3 rounded-md bg-hud-panel px-7 py-5 text-center"
 >

@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "npm run dev -w @blockfront/client",
     "build": "npm run build -w @blockfront/client",
-    "preview": "npm run build && wrangler pages dev apps/client/dist --port 8788",
+    "preview": "npm run build && wrangler dev --port 8788",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "lint": "eslint .",
@@ -20,8 +20,8 @@
     "format:check": "prettier --check .",
     "check:qa-absent": "node scripts/check-qa-absent.mjs",
     "bots:bench": "npm run bots:bench -w @blockfront/sim --",
-    "deploy": "npm run check:qa-absent && wrangler pages deploy apps/client/dist --project-name blockfront --branch main",
-    "deploy:preview": "npm run check:qa-absent && wrangler pages deploy apps/client/dist --project-name blockfront --branch preview"
+    "deploy": "npm run check:qa-absent && wrangler deploy",
+    "deploy:check": "npm run build && wrangler deploy --dry-run"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -1381,19 +1381,22 @@ Browser QA on the dev server (`?qa=1`) and on the production preview, with a vis
 - Commit.
 - Deploy following `docs/deploy.md`.
 
-## Hosting on Cloudflare Pages (2026-11-14)
+## Hosting: static assets on Cloudflare (2026-11-14)
 
-The Worker (`apps/server`) only served static files plus `/api/health`, so it was replaced by Cloudflare Pages.
+The Worker (`apps/server`) only served static files plus `/api/health`, so it was removed.
 
-- **Removed:** the `apps/server` workspace and the `deploy:check` script (CI runs `check:qa-absent` instead, which also builds).
-- **Added:** `apps/client/public/_headers`. It sets a CSP (`script-src 'self'`, `frame-ancestors 'none'`, and `blob:` in `img-src` and `connect-src`, because GLTFLoader fetches embedded textures through blob URLs), `nosniff`, a referrer policy and a permissions policy. It also sets a one-year immutable cache for `/assets/*`, one day for `/audio/*` and `/models/*`, and `noindex` on preview URLs.
-- **Scripts:** `preview` (`wrangler pages dev` on :8788), `deploy` and `deploy:preview` (`wrangler pages deploy`).
-- **Verified on `wrangler pages dev`:**
-  - the headers arrive as written;
+- **Pages first.** The game was prepared for Pages at first. Cloudflare's dashboard created the project through **Workers Builds**, and its default `npx wrangler deploy` failed at the root of the monorepo: "application detection logic has been run in the root of a workspace".
+- **Fix:** a root `wrangler.jsonc` with **assets only**. It has no `main`, so no Worker code runs and every request is a free static-asset request.
+- **Added:** `apps/client/public/_headers`.
+  - Security: a CSP (`script-src 'self'`, `frame-ancestors 'none'`, and `blob:` in `img-src` and `connect-src`, because GLTFLoader fetches embedded textures through blob URLs), `nosniff`, a referrer policy and a permissions policy.
+  - Cache: one-year immutable for `/assets/*`, one day for `/audio/*` and `/models/*`.
+  - `noindex` on `*.workers.dev`.
+- **Scripts:** `preview` (`wrangler dev` on :8788), `deploy` (`check:qa-absent` + `wrangler deploy`) and `deploy:check` (dry-run, run in CI).
+- **Verified locally:**
+  - with `wrangler pages dev` and then `wrangler dev`, the headers arrive as written;
   - the menu loads, a match starts, and the console shows no errors;
   - `window.blockfront` is absent.
 
   The first CSP lacked `blob:` in `connect-src`, which blocked the textures of the weapon models.
 
-- **Checks:** typecheck, lint, format and `check:qa-absent` are green.
-- **Steps:** in `docs/deploy.md`. Git integration is recommended, with a preview URL per branch.
+- **Dry-run:** `wrangler deploy --dry-run` reads 191 files and finds no bindings.

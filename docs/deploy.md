@@ -1,83 +1,76 @@
-# Deploy — Cloudflare Pages (blockfront.riverogz.com)
+# Deploy — Cloudflare (blockfront.riverogz.com)
 
-Pasos para publicar el juego en Cloudflare Pages. Los ejecuta Jhon; ningún agente hace deploy, commit
-ni push.
+Pasos para publicar el juego en Cloudflare. Los ejecuta Jhon; ningún agente hace deploy, commit ni
+push.
 
-El juego es 100 % estático: la simulación y los bots corren en el navegador del jugador. Pages sirve
-`apps/client/dist` tal cual, sin código de servidor. El archivo `apps/client/public/_headers` (Vite lo
-copia a `dist/`) define las cabeceras de seguridad, la caché y el `noindex` de las previews.
+El juego es 100 % estático: la simulación y los bots corren en el navegador del jugador. El
+`wrangler.jsonc` de la raíz declara solo **static assets** (`apps/client/dist`), sin `main`. No corre
+código de Worker y cada petición es una petición de asset, gratis e ilimitada. El archivo
+`apps/client/public/_headers` (Vite lo copia a `dist/`) define las cabeceras de seguridad, la caché y
+el `noindex` de `*.workers.dev`.
+
+Es el sucesor que Cloudflare recomienda para Pages, y lo que crea hoy el panel con **Workers & Pages
+→ Create → Import a repository**.
 
 ## 0. Antes de empezar
 
 - Node 22.12 o superior (`.nvmrc` dice 22).
-- La zona `riverogz.com` debe estar en la misma cuenta de Cloudflare donde se crea el proyecto.
-- Verificaciones completas en local:
+- La zona `riverogz.com` debe estar en la misma cuenta de Cloudflare.
+- Verificaciones en local:
 
 ```bash
 npm ci
 npm run typecheck && npm run lint && npm test
 npm run check:qa-absent   # compila y falla si un hook de QA llega a dist
-npm run preview           # build + wrangler pages dev en http://localhost:8788, con _headers aplicado
+npm run deploy:check      # build + wrangler deploy --dry-run
+npm run preview           # build + wrangler dev en http://localhost:8788, con _headers aplicado
 ```
 
-## 1. Crear el proyecto de Pages
+## 1. Proyecto conectado a GitHub (Workers Builds)
 
-Elegir **una** de las dos opciones. Un proyecto creado por subida directa (opción B) **no** se puede
-conectar a Git después; si se quiere la A, hay que empezar por la A.
+Cada push a `main` publica producción. Las otras ramas suben una versión con su propia URL de
+preview, sin tocar producción.
 
-### Opción A (recomendada): conectado a GitHub
+1. Cloudflare → **Workers & Pages** → **Create** → **Import a repository** → `JhonRiv21/Blockfront`.
+2. Configuración (si el proyecto ya existe: **Settings** → **Build**):
 
-Cada push a `main` publica producción, y cada otra rama o PR recibe su propia URL de preview
-(`<rama>.blockfront.pages.dev`). No hay tokens que guardar.
+   | Campo                                | Valor                          |
+   | ------------------------------------ | ------------------------------ |
+   | Project / Worker name                | `blockfront`                   |
+   | Build command                        | `npm run build`                |
+   | Deploy command                       | `npx wrangler deploy`          |
+   | Non-production branch deploy command | `npx wrangler versions upload` |
+   | Root directory / Path                | `/` (la raíz del repo)         |
+   | Variable de build                    | `NODE_VERSION` = `22`          |
 
-1. Hacer push del repo a `JhonRiv21/Blockfront`.
-2. Cloudflare → **Workers & Pages** → **Create** → pestaña **Pages** → **Connect to Git**.
-3. Autorizar GitHub y elegir `JhonRiv21/Blockfront`.
-4. Configuración de build:
+   El nombre del Worker en el panel **debe** ser `blockfront`, igual que `name` en `wrangler.jsonc`;
+   si no coinciden, el build falla. Las dependencias se instalan solas con `npm ci` porque existe
+   `package-lock.json`.
 
-   | Campo                  | Valor                     |
-   | ---------------------- | ------------------------- |
-   | Project name           | `blockfront`              |
-   | Production branch      | `main`                    |
-   | Framework preset       | None                      |
-   | Build command          | `npm run build`           |
-   | Build output directory | `apps/client/dist`        |
-   | Root directory         | (vacío, la raíz del repo) |
-   | Variable de entorno    | `NODE_VERSION` = `22`     |
+3. Guardar y lanzar el build (o hacer push). Queda en `https://blockfront.<subdominio>.workers.dev`.
 
-   Pages instala las dependencias solo con `npm ci` porque existe `package-lock.json`. La variable
-   `NODE_VERSION` es redundante con `.nvmrc`, pero deja la versión fija aunque cambie la imagen de
-   build.
+### Error conocido
 
-5. **Save and Deploy**. Queda en `https://blockfront.pages.dev` (si el nombre está tomado, Cloudflare
-   le agrega un sufijo; la URL real aparece en el panel).
+Sin el `wrangler.jsonc` de la raíz, `npx wrangler deploy` falla con: «The Cloudflare application
+detection logic has been run in the root of a workspace instead of targeting a specific project».
+El archivo ya está en el repo; si reaparece, revisar que el push lo incluya.
 
-Opcional: en **Settings** → **Builds** → **Branch control** se puede limitar qué ramas generan
-preview.
-
-### Opción B: subida directa desde la máquina
-
-Sin conectar GitHub; se publica lo que haya en local.
+### Alternativa: subir desde la máquina
 
 ```bash
 npx wrangler login
-npx wrangler whoami        # confirmar que es la cuenta que tiene la zona riverogz.com
-npm run deploy:preview     # check:qa-absent + subida a la rama "preview"
-npm run deploy             # check:qa-absent + subida a producción (rama main)
+npx wrangler whoami   # confirmar que es la cuenta que tiene la zona riverogz.com
+npm run deploy        # check:qa-absent + wrangler deploy
 ```
-
-La primera vez, wrangler pregunta si crea el proyecto `blockfront`: responder que sí, con `main` como
-rama de producción. La preview queda en `https://preview.blockfront.pages.dev`.
 
 ## 2. Dominio personalizado `blockfront.riverogz.com`
 
-1. Proyecto `blockfront` → **Custom domains** → **Set up a custom domain**.
-2. Escribir `blockfront.riverogz.com` y confirmar. Como la zona está en la misma cuenta, Cloudflare
-   crea el CNAME y el certificado solo.
-3. No crear el CNAME a mano antes: si el dominio no está asociado al proyecto desde este panel, Pages
-   responde con error 522. Si ya existe un registro `blockfront` en la zona, borrarlo primero.
+1. Worker `blockfront` → **Settings** → **Domains & Routes** → **Add** → **Custom domain**.
+2. Escribir `blockfront.riverogz.com` y confirmar. Cloudflare crea el registro DNS y el
+   certificado. Si ya existe un registro `blockfront` en la zona, hay que borrarlo antes.
 
-`index.html` ya apunta `canonical`, `og:url` y `og:image` a este dominio.
+`index.html` ya apunta `canonical`, `og:url` y `og:image` a este dominio. Las URLs `*.workers.dev`
+llevan `noindex` para que los buscadores solo indexen el dominio propio.
 
 ## 3. Ajustes de la zona `riverogz.com`
 
@@ -119,11 +112,12 @@ Son ajustes de toda la zona: también aplican al museo y al resto de subdominios
 
 - [ ] `https://blockfront.riverogz.com/og.png` carga.
 - [ ] Sin errores en la consola al cargar ni al jugar una partida. Un error de
-      `Content-Security-Policy` en la consola significa que hay que ajustar `_headers`.
+      `Content-Security-Policy` significa que hay que ajustar `_headers`.
 
 ## 5. Costo esperado: $0
 
-- Plan **Free** de Pages: sitios estáticos con peticiones y ancho de banda ilimitados.
-- Límites que importan: 500 builds al mes (opción A), 20.000 archivos y 25 MiB por archivo. El build
-  pesa ~2,5 MB en 186 archivos.
-- Sin Functions, Workers, Durable Objects, D1 ni KV: no hay nada que facture.
+- Plan **Free**. Las peticiones a static assets son gratis e ilimitadas y no consumen la cuota de
+  peticiones del Worker, porque no hay código de Worker (`wrangler.jsonc` no tiene `main`).
+- Workers Builds en el plan Free: un build a la vez, con un tope mensual de minutos de build. Este
+  build tarda ~1 s más la instalación de dependencias.
+- Sin Durable Objects, D1, KV ni R2: no hay nada que facture.

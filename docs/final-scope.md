@@ -6,7 +6,7 @@ PLAN.
 
 - Juego **100 % en el navegador**: la simulación corre en el worker (`LocalTransport`). Sin Durable
   Objects, sin D1, sin cuentas.
-- Hosting: **Cloudflare Pages** sirve solo archivos estáticos ($0, sin cuota que vigilar). El deploy
+- Hosting: **Cloudflare (Workers static assets)** sirve solo archivos estáticos ($0, sin cuota que vigilar). El deploy
   lo ejecuta Jhon (`docs/deploy.md`).
 - Reglas de ejecución: PLAN.md §11. Código en inglés, copy ES/EN, `sim` puro, tests desde esta
   especificación y **sin commit**.
@@ -213,5 +213,5 @@ Puntaje de utilidad por tick para elegir la meta actual:
 - `assets/CREDITS.md` completo y una sección de créditos dentro del juego.
 - `npm run check:qa-absent`, typecheck, lint, tests y build en verde.
 - Comandos de deploy para Jhon:
-  - Cloudflare Pages con solo archivos estáticos (cambiado del Worker el 2026-11-14).
+  - Workers static assets con `wrangler.jsonc` en la raíz, sin código de Worker (2026-11-14).
   - Dominio `blockfront.riverogz.com` con Always Use HTTPS y TLS ≥ 1.2.

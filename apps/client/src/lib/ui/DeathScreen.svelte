@@ -1,11 +1,11 @@
 <script lang="ts">
   import { hudState } from './hud-state.svelte.ts'
   import { t } from '../i18n/locale.svelte.ts'
-  import { causeLabel, displayName, itemLabel } from './labels.ts'
-  import { PRIMARIES } from '../settings/match-setup.ts'
+  import { causeLabel, displayName } from './labels.ts'
+  import PrimaryPicker from './PrimaryPicker.svelte'
 
-  // The primary picked here arrives with the next life; the sim enforces it. CTF brings players
-  // back in waves, TDM and FFA one by one.
+  // The primary picked here (click or 1-5) arrives with the next life; the sim enforces it. CTF
+  // brings players back in waves, TDM and FFA one by one. The pointer is free while dead.
 </script>
 
 <div
@@ -39,15 +39,5 @@
       : t('hud.respawnIn', { s: Math.ceil(hudState.respawnIn) })}
   </p>
   <span class="mt-1 text-sm text-hud-muted">{t('death.loadout')}</span>
-  <div class="pointer-events-auto flex flex-wrap justify-center gap-1.5">
-    {#each PRIMARIES as weapon (weapon)}
-      <button
-        type="button"
-        class="rounded-md border-2 px-3 py-1.5 text-base {weapon === hudState.menuPrimary
-          ? 'border-hud bg-hud/90 font-semibold text-hud-ink'
-          : 'border-hud-muted/30 bg-hud-panel text-hud hover:border-hud'}"
-        onclick={() => hudState.selectPrimary(weapon)}>{itemLabel(weapon)}</button
-      >
-    {/each}
-  </div>
+  <PrimaryPicker keys />
 </div>

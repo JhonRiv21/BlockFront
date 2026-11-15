@@ -20,13 +20,16 @@ export class InputState {
   sensitivity = 1
   invertY = false
   onLockFailure: (reason: LockFailure) => void = () => {}
-  // P pressed while the pointer is free (the pause panel is up).
-  onResumeKey: () => void = () => {}
+  // A key pressed while the pointer is free (pause panel, death or match-end screen). A key press
+  // is a user gesture, so the hook may ask for the lock back.
+  onFreeKey: (code: string) => void = () => {}
   // QA mode: behave as locked without a pointer lock, so injected input is accepted.
   qa = false
   // A click on the canvas asks for the lock only while a match is up; the menu's backdrop is
   // not a play button.
   lockOnClick = false
+  // A canvas click that does not take the lock.
+  onFreeClick: () => void = () => {}
   private readonly keys = new Latch()
   private readonly buttons = new Latch()
   private mouseDx = 0
@@ -202,6 +205,7 @@ export class InputState {
 
   private readonly onClick = (): void => {
     if (this.lockOnClick) this.requestLock()
+    else this.onFreeClick()
   }
 
   private readonly onContextMenu = (event: Event): void => {
@@ -252,8 +256,7 @@ export class InputState {
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (!this.locked) {
-      // A key press is a user gesture: P can ask for the lock back and so resume.
-      if (event.code === 'KeyP') this.onResumeKey()
+      if (!event.repeat) this.onFreeKey(event.code)
       return
     }
     if (!event.repeat) this.keys.press(event.code)

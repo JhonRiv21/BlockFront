@@ -47,8 +47,17 @@
     {#if hudState.hasSnapshot}
       <Compass />
     {/if}
-    {#if !hudState.alive && hudState.matchState !== 'ended'}
+    <!-- One panel at a time: the result beats the pause, the pause beats the death screen. -->
+    {#if !hudState.alive && hudState.matchState !== 'ended' && hudState.phase !== 'paused'}
       <DeathScreen />
+    {/if}
+    {#if hudState.phase === 'playing' && hudState.hasSnapshot && hudState.alive && !hudState.pointerLocked && hudState.matchState !== 'ended'}
+      <!-- Back from the death screen: the pointer was freed, a click takes it again. -->
+      <div
+        class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-md bg-hud-panel px-6 py-3 text-xl font-semibold"
+      >
+        {t('hud.clickToPlay')}
+      </div>
     {/if}
     {#if hudState.showScoreboard && hudState.matchState !== 'ended'}
       <Scoreboard />
@@ -57,7 +66,7 @@
       <MatchEnd />
     {/if}
   {/if}
-  {#if hudState.phase === 'paused' && !settingsShown}
+  {#if hudState.phase === 'paused' && hudState.matchState !== 'ended' && !settingsShown}
     <PausePanel />
   {/if}
   {#if hudState.phase === 'menu' && loaded && !settingsShown}

@@ -49,6 +49,7 @@ import type {
   ScoreRow,
 } from '../ui/hud-state.svelte.ts'
 import type { Settings } from '../settings/settings.ts'
+import { PRIMARIES } from '../settings/match-setup.ts'
 import { sortRows } from '../ui/standings.ts'
 import { ChestsView } from './chests-view.ts'
 import type { LootGain } from './loot.ts'
@@ -129,9 +130,13 @@ export interface RendererCallbacks {
   // Start-up progress 0..1; the menu waits for 'done'.
   onLoading: (stage: LoadStage, progress: number) => void
   onLoot: (gain: LootGain) => void
+  // Primary for the next life, chosen with a number key on the death screen.
+  onPrimary: (weapon: WeaponId) => void
 }
 
 const FPS_SAMPLE_MS = 500
+// Number keys that pick the next primary on the death screen, in PRIMARIES order.
+const PRIMARY_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5']
 const DEFAULT_SEED = 1
 const LOCAL_PLAYER_ID = 1
 const REACH = 5
@@ -219,6 +224,10 @@ export class GameRenderer {
   private showHitboxes = false
   private showStats = false
   private phase: Phase = 'menu'
+  // The sim worker is stopped: before the first lock of a match, on a hidden tab or after a fatal
+  // error. Esc and P only pause the player; the match keeps running behind the pause panel.
+  private frozen = false
+  private wasAlive = true
   private lastSetup: MatchSetup | null = null
   private scoreboardShown = false
   private aimedBlockId = 0
@@ -311,13 +320,24 @@ export class GameRenderer {
     this.input = new InputState(canvas, (locked) => {
       if (locked) this.sounds.resume()
       callbacks.onPointerLock(locked)
-      // The lock is the match's run switch: losing it pauses, getting it back resumes.
+      // Getting the lock resumes; losing it pauses, except while dead or after the match, when
+      // the pointer is freed on purpose for the death and result screens.
       if (locked && this.phase === 'paused') this.resume()
-      else if (!locked && this.phase === 'playing') this.pause()
+      else if (!locked && this.phase === 'playing' && !this.pointerFree()) this.pause()
     })
     this.input.onLockFailure = (reason) => callbacks.onLockFailure(reason)
-    this.input.onResumeKey = () => {
-      if (this.phase === 'paused') this.input.requestLock()
+    this.input.onFreeKey = (code) => {
+      if (code === 'KeyP' && this.phase === 'paused') this.continueFromPause()
+      const index = PRIMARY_KEYS.indexOf(code)
+      const weapon = PRIMARIES[index]
+      if (weapon && this.phase === 'playing' && this.localDead()) {
+        this.setPrimary(weapon)
+        callbacks.onPrimary(weapon)
+      }
+    }
+    // A click on the canvas resumes; while dead there is no lock to take back.
+    this.input.onFreeClick = () => {
+      if (this.phase === 'paused') this.continueFromPause()
     }
     this.input.qa = this.qa
     this.pool.onFatal = (message) => this.fatal('mesher', message)
@@ -406,53 +426,92 @@ export class GameRenderer {
     this.viewmodel.setBobScale(settings.reduceMotion ? REDUCED_BOB : 1)
   }
 
-  // Match lifecycle. The sim worker starts paused and the pointer lock, which the Play click
-  // requests, flips it to running; Esc, P, a hidden tab or a lost lock pause it again.
+  // Match lifecycle. The sim worker starts frozen and the pointer lock, which the Play click
+  // requests, starts it. Esc, P or a lost lock pause the player only: the bots keep playing, as
+  // in an online match. A hidden tab or a fatal error freezes the sim.
   startMatch(setup: MatchSetup): void {
     this.lastSetup = setup
     this.matchId++
     this.resetMatchState()
     this.transport.start(matchConfig(setup), LOCAL_PLAYER_ID)
     this.transport.pause()
+    this.frozen = true
     this.setPhase('paused')
     this.input.requestLock()
   }
 
-  // Same setup, fresh match.
-  restartMatch(): void {
+  // Same setup, fresh match; the result screen may change the primary.
+  restartMatch(primary?: WeaponId): void {
     if (!this.lastSetup) return
     this.transport.stop()
     this.setPhase('menu')
-    this.startMatch(this.lastSetup)
+    this.startMatch(primary ? { ...this.lastSetup, primary } : this.lastSetup)
   }
 
   endMatch(): void {
     if (this.phase === 'menu') return
     this.transport.stop()
+    this.frozen = false
     this.setPhase('menu')
     this.input.releaseLock()
     this.resetMatchState()
   }
 
   pause(): void {
-    if (this.phase !== 'playing') return
-    this.transport.pause()
+    if (this.phase !== 'playing' || this.matchEnded()) return
     this.setPhase('paused')
     this.input.releaseLock()
+  }
+
+  // Stops the sim worker too: nobody is watching, or nothing can be drawn.
+  private freeze(): void {
+    if (this.phase === 'menu') return
+    if (!this.frozen) this.transport.pause()
+    this.frozen = true
+    if (this.phase === 'playing') {
+      this.setPhase('paused')
+      this.input.releaseLock()
+    }
   }
 
   resume(): void {
     if (this.phase !== 'paused') return
     this.input.clearAll()
-    this.transport.resume()
-    this.inputClock.reset()
+    if (this.frozen) {
+      this.transport.resume()
+      this.frozen = false
+      this.inputClock.reset()
+    }
     this.setPhase('playing')
+  }
+
+  // Dead or the match over: resume without the lock, the screens need the pointer.
+  private continueFromPause(): void {
+    if (this.pointerFree()) this.resume()
+    else this.input.requestLock()
+  }
+
+  private localDead(): boolean {
+    return this.buffer.player(LOCAL_PLAYER_ID)?.alive === false
+  }
+
+  private matchEnded(): boolean {
+    return this.buffer.latest?.match.state === 'ended'
+  }
+
+  private pointerFree(): boolean {
+    return this.localDead() || this.matchEnded()
   }
 
   private setPhase(phase: Phase): void {
     this.phase = phase
-    this.input.lockOnClick = phase !== 'menu'
+    this.updateLockOnClick()
     this.callbacks.onPhase(phase)
+  }
+
+  // A canvas click takes the lock while a match is up, but not on the death or result screens.
+  private updateLockOnClick(): void {
+    this.input.lockOnClick = this.phase !== 'menu' && !this.pointerFree()
   }
 
   private resetMatchState(): void {
@@ -471,11 +530,12 @@ export class GameRenderer {
     this.lastOnGround = true
     this.lastVy = 0
     this.lastTickAt = -1
+    this.wasAlive = true
   }
 
   private fatal(kind: FatalKind, message: string): void {
     console.error(kind, message)
-    if (this.phase === 'playing') this.pause()
+    this.freeze()
     this.callbacks.onFatal({ kind, message })
   }
 
@@ -483,7 +543,7 @@ export class GameRenderer {
   private readonly onContextLost = (event: Event): void => {
     event.preventDefault()
     this.renderer.setAnimationLoop(null)
-    if (this.phase === 'playing') this.pause()
+    this.freeze()
     this.callbacks.onFatal({ kind: 'webgl', message: '' })
   }
 
@@ -494,7 +554,7 @@ export class GameRenderer {
   }
 
   private readonly onVisibility = (): void => {
-    if (document.hidden && !this.qa) this.pause()
+    if (document.hidden && !this.qa) this.freeze()
   }
 
   // Loadout: one primary at a time, chosen from the HUD panel. Applies immediately for now;
@@ -595,6 +655,10 @@ export class GameRenderer {
     if (this.phase === 'playing') {
       if (this.input.takePressed('KeyP')) this.pause()
       this.controls.readSlot()
+    }
+    // Paused but not frozen, the player still sends a frame per tick: standing still, with the
+    // keys released when the lock went.
+    if (this.phase === 'playing' || (this.phase === 'paused' && !this.frozen)) {
       const { steps } = this.inputClock.advance(elapsed)
       for (let i = 0; i < steps; i++) {
         this.transport.sendInput(this.controls.buildInput(this.mode === 'fly'))
@@ -729,9 +793,15 @@ export class GameRenderer {
     const me = snapshot.players.find((p) => p.id === LOCAL_PLAYER_ID) ?? null
     this.feedback.afterSnapshot(snapshot, me)
     this.entities.updateGlints(snapshot)
-    // The match is over: free the pointer so the result panel's buttons can be clicked.
-    if (snapshot.match.state === 'ended' && this.buffer.previous?.match.state !== 'ended')
+    // Death and the end of the match free the pointer for their screens' buttons. The match ends
+    // even behind the pause panel, which then gives way to the result.
+    if (snapshot.match.state === 'ended' && this.buffer.previous?.match.state !== 'ended') {
       this.input.releaseLock()
+      if (this.phase === 'paused') this.setPhase('playing')
+    }
+    if (me && !me.alive && this.wasAlive) this.input.releaseLock()
+    if (me) this.wasAlive = me.alive
+    this.updateLockOnClick()
     if (!me) return
     this.controls.followSim(me)
     this.callbacks.onHud({

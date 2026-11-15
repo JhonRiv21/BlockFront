@@ -4,6 +4,7 @@
   import { displayName, teamLabel } from './labels.ts'
   import { ffaStanding } from './standings.ts'
   import ScoreTable from './ScoreTable.svelte'
+  import PrimaryPicker from './PrimaryPicker.svelte'
 
   // Result by mode: a team or a draw (CTF, TDM), a player or a draw (FFA, winner 'player').
   const mvpRow = $derived(hudState.rows.find((row) => row.id === hudState.mvp) ?? null)
@@ -58,9 +59,11 @@
       </span>
     </p>
   {/if}
-  <div class="mt-2 max-h-[45vh] w-full overflow-y-auto">
+  <div class="mt-2 max-h-[40vh] w-full overflow-y-auto">
     <ScoreTable rows={hudState.rows} />
   </div>
+  <span class="mt-1 text-sm text-hud-muted">{t('end.loadout')}</span>
+  <PrimaryPicker />
   <div class="mt-2 flex gap-3">
     <button
       type="button"

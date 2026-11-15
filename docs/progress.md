@@ -1400,3 +1400,25 @@ The Worker (`apps/server`) only served static files plus `/api/health`, so it wa
   The first CSP lacked `blob:` in `connect-src`, which blocked the textures of the weapon models.
 
 - **Dry-run:** `wrangler deploy --dry-run` reads 191 files and finds no bindings.
+
+## Playtest fixes, batch 1 — panels and pause (2026-11-14)
+
+Jhon played the deployed build on a weaker PC. This batch covers the screens and the pause; the scopes (rifle, pistol and shotgun hands) and the bot and jump snags come next.
+
+- **Stacked panels:**
+  - **Cause:** the result screen freed the pointer, losing the pointer pauses the game, and the pause panel was drawn over the result. The same happened over the death screen after Esc.
+  - **Now:** one panel at a time (result, then pause, then death), and the game cannot be paused once the match is over. The renderer no longer pauses when the pointer is freed on purpose.
+- **Pause:** Esc, P or a lost lock pause only the player, who stands still while the match keeps running behind the panel. A hidden tab, a fatal error or a lost WebGL context still freeze the sim worker (`freeze()`), as does the time before the first lock of a match.
+- **Death screen:**
+  - **Pointer:** freed on death, so the weapon buttons can be clicked; keys 1–5 pick a weapon too.
+  - **Selection:** the picked weapon now stays highlighted. Before, every snapshot overwrote `menuPrimary` with the current weapon, so the buttons seemed dead even though the choice applied.
+  - **Respawn:** after the respawn, "Click to play" takes the lock again.
+- **Play again:** the result screen has the same weapon picker, and the restart uses it (`restartMatch(primary)`).
+- **Checked:**
+  - **QA in the browser (`?qa=1`):**
+    - in 2 s of pause the sim advanced 60 ticks;
+    - with the player dead, the pause hides the death screen and resuming brings it back;
+    - a click on Shotgun stays pressed;
+    - the player respawns with the shotgun.
+  - **Not checked here:** the real pointer lock (QA mode fakes it) and the result screen, which needs a full match. Left for the hand test.
+- **Checks:** typecheck, lint and 36 client tests are green.

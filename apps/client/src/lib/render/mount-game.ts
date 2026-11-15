@@ -88,6 +88,9 @@ export const mountGame: Attachment<HTMLCanvasElement> = (canvas) => {
         hudState.loadStage = stage
         hudState.loadProgress = progress
       },
+      onPrimary: (weapon) => {
+        hudState.menuPrimary = weapon
+      },
       onLoot: (gain) => {
         hudState.loot = gain
         hudState.lootAt = performance.now()
@@ -130,7 +133,6 @@ export const mountGame: Attachment<HTMLCanvasElement> = (canvas) => {
         hudState.respawnIn = player.respawnIn
         hudState.slot = player.slot
         hudState.weapon = player.weapon
-        hudState.menuPrimary = player.weapon
         hudState.mag = player.mag
         hudState.reserve = player.reserve
         hudState.reloading = player.reloading
@@ -177,7 +179,7 @@ export const mountGame: Attachment<HTMLCanvasElement> = (canvas) => {
     renderer.startMatch(setup)
   }
   hudState.quitMatch = () => renderer.endMatch()
-  hudState.playAgain = () => renderer.restartMatch()
+  hudState.playAgain = () => renderer.restartMatch(hudState.menuPrimary)
   settingsState.listen((settings) => {
     renderer.applySettings(settings)
     locale.set(settings.language ?? detectLocale(navigator.languages ?? [navigator.language]))

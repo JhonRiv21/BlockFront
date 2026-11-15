@@ -1380,3 +1380,20 @@ Browser QA on the dev server (`?qa=1`) and on the production preview, with a vis
 - Record a gameplay GIF for the README.
 - Commit.
 - Deploy following `docs/deploy.md`.
+
+## Hosting on Cloudflare Pages (2026-11-14)
+
+The Worker (`apps/server`) only served static files plus `/api/health`, so it was replaced by Cloudflare Pages.
+
+- **Removed:** the `apps/server` workspace and the `deploy:check` script (CI runs `check:qa-absent` instead, which also builds).
+- **Added:** `apps/client/public/_headers`. It sets a CSP (`script-src 'self'`, `frame-ancestors 'none'`, and `blob:` in `img-src` and `connect-src`, because GLTFLoader fetches embedded textures through blob URLs), `nosniff`, a referrer policy and a permissions policy. It also sets a one-year immutable cache for `/assets/*`, one day for `/audio/*` and `/models/*`, and `noindex` on preview URLs.
+- **Scripts:** `preview` (`wrangler pages dev` on :8788), `deploy` and `deploy:preview` (`wrangler pages deploy`).
+- **Verified on `wrangler pages dev`:**
+  - the headers arrive as written;
+  - the menu loads, a match starts, and the console shows no errors;
+  - `window.blockfront` is absent.
+
+  The first CSP lacked `blob:` in `connect-src`, which blocked the textures of the weapon models.
+
+- **Checks:** typecheck, lint, format and `check:qa-absent` are green.
+- **Steps:** in `docs/deploy.md`. Git integration is recommended, with a preview URL per branch.

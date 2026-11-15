@@ -1,0 +1,23 @@
+# Cloudflare Pages response headers (https://developers.cloudflare.com/pages/configuration/headers/).
+# Vite copies this file to dist/ untouched; Pages applies it and does not serve it.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Content-Security-Policy: default-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+
+# Hashed by Vite: a new build always produces new file names.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Fixed names, rarely change: cached for a day, then revalidated.
+/audio/*
+  Cache-Control: public, max-age=86400
+/models/*
+  Cache-Control: public, max-age=86400
+
+# Preview deployments (<hash>.<project>.pages.dev and <branch>.<project>.pages.dev) stay out of search engines.
+https://:version.:project.pages.dev/*
+  X-Robots-Tag: noindex

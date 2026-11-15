@@ -12,15 +12,16 @@
   "scripts": {
     "dev": "npm run dev -w @blockfront/client",
     "build": "npm run build -w @blockfront/client",
-    "preview": "npm run build && npm run dev -w @blockfront/server",
+    "preview": "npm run build && wrangler pages dev apps/client/dist --port 8788",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "deploy:check": "npm run build && npm run deploy:check -w @blockfront/server",
     "check:qa-absent": "node scripts/check-qa-absent.mjs",
-    "bots:bench": "npm run bots:bench -w @blockfront/sim --"
+    "bots:bench": "npm run bots:bench -w @blockfront/sim --",
+    "deploy": "npm run check:qa-absent && wrangler pages deploy apps/client/dist --project-name blockfront --branch main",
+    "deploy:preview": "npm run check:qa-absent && wrangler pages deploy apps/client/dist --project-name blockfront --branch preview"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

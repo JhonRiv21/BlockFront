@@ -73,7 +73,7 @@ apps/client (Svelte 5 + Three.js)                      Web Workers
  │                                   ◄─ snapshot + events
  ├─ MesherPool ──────────────────────────────────────►  ├─ 2–4 mesher workers (greedy + AO)
  └─ SkylightTexture ─────────────────────────────────►  └─ light worker (first skylight fill)
-apps/server: Cloudflare Worker serving the static build, plus GET /api/health
+Cloudflare Pages: serves apps/client/dist as static files, headers in public/_headers
 ```
 
 - **Deterministic simulation in a Web Worker at 30 Hz.** `packages/sim` is pure TypeScript with no DOM, Three.js or Worker imports (an ESLint rule enforces it). The client never touches the game state: it sends one `InputFrame` per tick and draws the snapshots and events, interpolating between ticks at the screen rate. A replay test checks that, on the same machine, the same seed and the same inputs give an identical `serialize()` and event stream, and that a mid-match save restores to the same state.
@@ -82,7 +82,7 @@ apps/server: Cloudflare Worker serving the static build, plus GET /api/health
 - **Headless harness.** `npm run bots:bench` plays bot-only matches in Node at full speed and reports duration, winner, captures, kills, accuracy per difficulty, time stuck per bot and the ms per `Game.step`.
 - **Audio from real recordings, in layers.** Each shot mixes a mechanical click, the "behind the shooter" take from the Free Firearm Sound Library, a synthetic low thump and a tail. Enemy shots pick a near, mid or far take by distance and are low-passed and delayed at the speed of sound. A shared convolution reverb follows how enclosed the listener is (short DDA rays), and voice limits, buses, ducking, a compressor and a limiter keep the mix clean. Clips ship as Opus WebM with an AAC fallback.
 
-**Stack:** Svelte 5 · Vite 8 · Tailwind v4 · Three.js r186 · TypeScript (strict) · Vitest · Cloudflare Workers
+**Stack:** Svelte 5 · Vite 8 · Tailwind v4 · Three.js r186 · TypeScript (strict) · Vitest · Cloudflare Pages
 
 ### Measured numbers
 
@@ -113,7 +113,7 @@ Bot harness results:
 ### Decisions and trade-offs
 
 - **Three.js and an own engine, not Unity or Godot.** The web exports of Unity and Godot start at 5–10 MB and hide the code; Three.js plus a small voxel engine stays well under 1 MB of JS, loads in seconds and keeps every system readable in the repo.
-- **Offline against bots.** The game runs entirely in the browser and the Worker only serves static files, so it costs nothing and has no quota to watch.
+- **Offline against bots.** The game runs entirely in the browser and Cloudflare Pages only serves static files, so it costs nothing and has no quota to watch.
 - **Multiplayer was dropped** on 2026-11-13 because of the cost of maintaining it, not because of the engine. It was designed (an authoritative room per match on Durable Objects, prediction, interpolation and lag compensation), and the `Transport` interface between client and simulation is still the seam where a socket transport would plug in.
 - **Bots dig when they get stuck but never build or place TNT.** Building bots were left out of the final scope to close the project.
 - **The reinforced block was removed** because it turned the flag into a bunker and killed captures. For the same reason, a team's blocks only break for the enemy.
@@ -127,10 +127,10 @@ Requires Node 22.12 or later.
 ```bash
 npm install
 npm run dev              # client with hot reload (Vite)
-npm run preview          # production build served by the Worker (wrangler dev)
+npm run preview          # production build on Pages locally (wrangler pages dev, :8788)
 npm run typecheck && npm run lint && npm test
 npm run check:qa-absent  # builds and fails if any QA hook reaches dist
-npm run deploy:check     # build + wrangler deploy --dry-run
+npm run deploy:preview   # upload to preview.blockfront.pages.dev (see docs/deploy.md)
 ```
 
 - **QA mode:** in the dev server only, `?qa=1` runs the match without pointer lock and exposes `window.blockfront.qa` (inject keys, teleport, give items, read state, wait for events). Production builds strip it, and `check:qa-absent` verifies that.
@@ -221,7 +221,7 @@ apps/client (Svelte 5 + Three.js)                      Web Workers
  │                                   ◄─ snapshot + eventos
  ├─ MesherPool ──────────────────────────────────────►  ├─ 2–4 workers de mallado (greedy + AO)
  └─ SkylightTexture ─────────────────────────────────►  └─ worker de luz (primer relleno)
-apps/server: Worker de Cloudflare que sirve el build estático, más GET /api/health
+Cloudflare Pages: sirve apps/client/dist como archivos estáticos, cabeceras en public/_headers
 ```
 
 - **Simulación determinista en un Web Worker a 30 Hz.** `packages/sim` es TypeScript puro, sin DOM, Three.js ni APIs de Workers (una regla de ESLint lo impone). El cliente nunca toca el estado del juego: envía un `InputFrame` por tick y dibuja los snapshots y eventos, interpolando entre ticks a la tasa de la pantalla. Una prueba de repetición comprueba que, en la misma máquina, la misma semilla y los mismos inputs dan un `serialize()` y un flujo de eventos idénticos, y que una partida guardada a mitad se restaura al mismo estado.
@@ -261,7 +261,7 @@ Resultados del harness de bots:
 ### Decisiones y descartes
 
 - **Three.js y un motor propio, no Unity ni Godot.** Las exportaciones web de Unity y Godot arrancan con 5–10 MB y ocultan el código; Three.js más un motor voxel pequeño queda muy por debajo de 1 MB de JS, carga en segundos y deja cada sistema legible en el repo.
-- **Sin conexión, contra bots.** El juego corre entero en el navegador y el Worker solo sirve archivos estáticos, así que no cuesta nada y no hay cuota que vigilar.
+- **Sin conexión, contra bots.** El juego corre entero en el navegador y Cloudflare Pages solo sirve archivos estáticos, así que no cuesta nada y no hay cuota que vigilar.
 - **El multijugador se descartó** el 2026-11-13 por el costo de mantenerlo, no por el motor. Estaba diseñado (una sala autoritativa por partida en Durable Objects, predicción, interpolación y compensación de lag), y la interfaz `Transport` entre el cliente y la simulación sigue siendo el punto donde se conectaría un transporte por socket.
 - **Los bots cavan cuando se atascan, pero no construyen ni ponen TNT.** Los bots constructores quedaron fuera del alcance final para cerrar el proyecto.
 - **Se quitó el bloque reforzado** porque convertía la bandera en un búnker y mataba las capturas. Por lo mismo, los bloques de un equipo solo los rompe el enemigo.
@@ -275,10 +275,10 @@ Requiere Node 22.12 o superior.
 ```bash
 npm install
 npm run dev              # cliente con recarga en caliente (Vite)
-npm run preview          # build de producción servido por el Worker (wrangler dev)
+npm run preview          # build de producción en Pages local (wrangler pages dev, :8788)
 npm run typecheck && npm run lint && npm test
 npm run check:qa-absent  # compila y falla si algún hook de QA llega a dist
-npm run deploy:check     # build + wrangler deploy --dry-run
+npm run deploy:preview   # sube a preview.blockfront.pages.dev (ver docs/deploy.md)
 ```
 
 - **Modo QA:** solo en el servidor de desarrollo, `?qa=1` corre la partida sin capturar el ratón y expone `window.blockfront.qa` (inyectar teclas, teletransportar, dar ítems, leer el estado, esperar eventos). El build de producción lo elimina, y `check:qa-absent` lo verifica.

@@ -77,6 +77,13 @@ export class ImpactMarks {
     if (changed) this.mesh.instanceMatrix.needsUpdate = true
   }
 
+  clearAll(): void {
+    this.blockOf.fill(-1)
+    for (let i = 0; i < MAX_MARKS; i++) this.mesh.setMatrixAt(i, HIDDEN)
+    this.mesh.instanceMatrix.needsUpdate = true
+    this.next = 0
+  }
+
   dispose(): void {
     this.scene.remove(this.mesh)
     this.mesh.geometry.dispose()

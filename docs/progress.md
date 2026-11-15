@@ -1422,3 +1422,20 @@ Jhon played the deployed build on a weaker PC. This batch covers the screens and
     - the player respawns with the shotgun.
   - **Not checked here:** the real pointer lock (QA mode fakes it) and the result screen, which needs a full match. Left for the hand test.
 - **Checks:** typecheck, lint and 36 client tests are green.
+
+## Playtest fixes, batch 2 — invisible blocks, reload and the void (2026-11-14)
+
+- **Invisible blocks:**
+  - **Symptom:** the shovel cracked a block in mid-air.
+  - **Cause:** the client generates its copy of the map once, at mount, while the sim builds a fresh one for every match. The edits of one match stayed in the client's copy for the next: dug blocks came back as invisible solid ones, and placed blocks as ghosts the player could walk through.
+  - **Fix:** `GameRenderer` saves the generated chunks (`World.saveChunks`) and on every match start writes back the voxels that differ (`World.diffFrom`), remeshing the touched chunks. Up to 400 voxels re-flood the skylight locally; past that, it is recomputed whole. Cracks, bullet marks and TNT fuses are cleared too.
+  - **Checked (`?qa=1`):** a block dug in one match is back in the client's world in the next.
+- **No aiming while reloading:**
+  - The gun in hand drops ADS while it reloads; a held right click aims again once the reload ends.
+  - An empty sniper therefore leaves the scope, and the automatic reload on an empty magazine was already there.
+  - Tests: `combat/aim-reload.test.ts`.
+- **Void:**
+  - Going off the edge of the map and falling below y = -12 kills, as a fall: spawn protection does not save you, and a recent enemy hit gives them the kill.
+  - Tests: `physics/void.test.ts`.
+  - Fall damage itself was already working: a 12-block drop took 45 HP in QA.
+- **Checks:** typecheck, lint, format, 334 sim tests and 36 client tests are green.

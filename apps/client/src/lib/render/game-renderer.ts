@@ -135,6 +135,8 @@ export interface RendererCallbacks {
 }
 
 const FPS_SAMPLE_MS = 500
+// Past this many restored voxels a full skylight pass is cheaper than local re-floods.
+const SKYLIGHT_LOCAL_EDITS = 400
 // Number keys that pick the next primary on the death screen, in PRIMARIES order.
 const PRIMARY_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5']
 const DEFAULT_SEED = 1
@@ -183,6 +185,8 @@ export class GameRenderer {
   private readonly sky: Sky
   readonly bakeMs: number
   private readonly world: World
+  // The map as generated: every match starts from it, in the sim and here.
+  private readonly pristineWorld: Uint8Array[]
   private readonly worldView: WorldView
   private readonly input: InputState
   private readonly controls: Controls
@@ -269,6 +273,7 @@ export class GameRenderer {
 
     // The client keeps its own copy of the map for rendering and aim preview; the sim owns it.
     this.world = generateWorld(DEFAULT_SEED)
+    this.pristineWorld = this.world.saveChunks()
     this.isSolid = (x, y, z) => isSolid(this.world.getBlock(x, y, z))
     const textures = createBlockTextures()
     this.bakeMs = textures.bakeMs
@@ -433,6 +438,7 @@ export class GameRenderer {
     this.lastSetup = setup
     this.matchId++
     this.resetMatchState()
+    this.restoreWorld()
     this.transport.start(matchConfig(setup), LOCAL_PLAYER_ID)
     this.transport.pause()
     this.frozen = true
@@ -512,12 +518,30 @@ export class GameRenderer {
     this.input.lockOnClick = this.phase !== 'menu' && !this.pointerFree()
   }
 
+  // The sim builds a fresh map for every match, so the edits of the last one (dug holes, placed
+  // blocks, craters) are undone here too; otherwise they linger as invisible blocks or ghost
+  // ones. Few edits re-flood the light locally; a crater-strewn map recomputes it whole.
+  private restoreWorld(): void {
+    const diff = this.world.diffFrom(this.pristineWorld)
+    if (diff.length === 0) return
+    const local = diff.length <= SKYLIGHT_LOCAL_EDITS
+    for (const [x, y, z, id] of diff) {
+      this.worldView.setBlock(x, y, z, id)
+      if (local) this.skylight.onBlockChanged(x, y, z)
+    }
+    if (!local) this.skylight.recompute()
+    void this.worldView.flushDirty()
+  }
+
   private resetMatchState(): void {
     this.recentEvents.length = 0
     this.input.clearAll()
     this.buffer.clear()
     this.entities.clear()
     this.chests.clear()
+    this.cracks.clearAll()
+    this.marks.clearAll()
+    this.tntFuses.clearAll()
     this.feedback.reset()
     this.controls.reset()
     this.grenadeArc.hide()

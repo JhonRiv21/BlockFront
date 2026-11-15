@@ -90,6 +90,32 @@ export class World {
     this.dirty.set(chunkKey(cx, cy, cz), { cx, cy, cz })
   }
 
+  // A copy of every chunk's voxels, to diff against later (see diffFrom).
+  saveChunks(): Uint8Array[] {
+    return this.chunks.map((chunk) => chunk.data.slice())
+  }
+
+  // Voxels that differ from a copy made by saveChunks, as [x, y, z, id in the copy]. Writing
+  // them back with setBlock restores the copy and marks the touched chunks dirty.
+  diffFrom(saved: readonly Uint8Array[]): [number, number, number, BlockId][] {
+    const out: [number, number, number, BlockId][] = []
+    for (let i = 0; i < this.chunks.length; i++) {
+      const now = this.chunks[i]!.data
+      const then = saved[i]!
+      const cx = i % this.chunksX
+      const cy = Math.floor(i / this.chunksX) % this.chunksY
+      const cz = Math.floor(i / (this.chunksX * this.chunksY))
+      for (let index = 0; index < now.length; index++) {
+        if (now[index] === then[index]) continue
+        const lx = index & CHUNK_MASK
+        const ly = (index >> CHUNK_SHIFT) & CHUNK_MASK
+        const lz = index >> (CHUNK_SHIFT * 2)
+        out.push([cx * CHUNK_SIZE + lx, cy * CHUNK_SIZE + ly, cz * CHUNK_SIZE + lz, then[index]!])
+      }
+    }
+    return out
+  }
+
   takeDirtyChunks(): ChunkCoord[] {
     const list = [...this.dirty.values()]
     this.dirty.clear()

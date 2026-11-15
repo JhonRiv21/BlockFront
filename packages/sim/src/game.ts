@@ -428,6 +428,12 @@ export class Game implements MatchContext {
     this.events.push({ type: 'heal', player: player.config.id })
   }
 
+  // A recent enemy hit turns a fall into their kill.
+  private fallAttacker(player: PlayerEntity): PlayerEntity {
+    const recent = this.tick - player.lastAttackedTick <= FALL.attributionSeconds * TICK_RATE
+    return (recent && this.players.get(player.lastAttacker)) || player
+  }
+
   private stepAlive(player: PlayerEntity, input: InputFrame): void {
     const move: MoveInput = {
       forward: input.forward,
@@ -438,10 +444,12 @@ export class Game implements MatchContext {
       crouch: hasButton(input, BUTTON.crouch),
       sprint: hasButton(input, BUTTON.sprint),
     }
-    // ADS only with a gun in hand and out of the water; it slows the walk while held.
-    const gun =
-      player.slot === 1 ? player.weapon.weapon : player.slot === 2 ? player.pistol.weapon : null
-    const wantsAim = gun !== null && hasButton(input, BUTTON.alt) && !player.state.inWater
+    // ADS only with a gun in hand, out of the water and not reloading (an empty sniper leaves the
+    // scope to reload); it slows the walk while held.
+    const held = player.slot === 1 ? player.weapon : player.slot === 2 ? player.pistol : null
+    const gun = held ? held.weapon : null
+    const wantsAim =
+      held !== null && !held.reloading && hasButton(input, BUTTON.alt) && !player.state.inWater
     player.ads = gun ? adsProgress(player.ads, gun, wantsAim, TICK_SECONDS) : 0
     move.speedMultiplier = gun ? moveMultiplier(gun, player.ads) : 1
     stepPlayer(player.state, move, this.isSolid, TICK_SECONDS, this.isLiquid, this.isClimbable)
@@ -453,12 +461,15 @@ export class Game implements MatchContext {
       })
       const damage = fallDamage(player.state.landedFrom)
       if (damage > 0) {
-        // A recent enemy hit turns the fall into their kill.
-        const recent = this.tick - player.lastAttackedTick <= FALL.attributionSeconds * TICK_RATE
-        const attacker = (recent && this.players.get(player.lastAttacker)) || player
-        applyDamage(this, attacker, player, damage, 'torso', 'fall')
+        applyDamage(this, this.fallAttacker(player), player, damage, 'torso', 'fall')
         if (!player.alive) return
       }
+    }
+    // Off the edge of the map there is nothing below: the void kills, through spawn protection.
+    if (player.state.pos[1] < FALL.voidY) {
+      player.protectedUntil = 0
+      applyDamage(this, this.fallAttacker(player), player, player.hp, 'torso', 'fall')
+      return
     }
     const sprinting =
       move.sprint && (input.forward !== 0 || input.strafe !== 0) && !player.state.inWater

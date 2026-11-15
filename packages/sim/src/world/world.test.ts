@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CHUNK_SIZE, WORLD_SIZE } from '../config.ts'
+import { BLOCK } from './blocks.ts'
 import { World } from './world.ts'
 
 // Written from the spec: global get/set, air outside the world, dirty chunk marks,
@@ -55,5 +56,47 @@ describe('World', () => {
     expect(padded.length).toBe(P * P * P)
     expect(padded[CHUNK_SIZE + 1 + 11 * P + 11 * P * P]).toBe(3)
     expect(padded[CHUNK_SIZE + 11 * P + 11 * P * P]).toBe(4)
+  })
+})
+
+describe('saved copy and diff (restoring the map between matches)', () => {
+  it('reports nothing when the world matches its saved copy', () => {
+    const world = new World()
+    world.fillBlock(5, 5, 5, BLOCK.stone)
+    const saved = world.saveChunks()
+    expect(world.diffFrom(saved)).toEqual([])
+  })
+
+  it('lists every edited voxel with the id it had when saved', () => {
+    const world = new World()
+    world.fillBlock(10, 20, 30, BLOCK.stone)
+    const saved = world.saveChunks()
+    world.setBlock(10, 20, 30, BLOCK.air)
+    world.setBlock(95, 63, 127, BLOCK.dirt)
+    world.setBlock(0, 0, 0, BLOCK.dirt)
+    const diff = world.diffFrom(saved)
+    expect(diff).toHaveLength(3)
+    expect(diff).toContainEqual([10, 20, 30, BLOCK.stone])
+    expect(diff).toContainEqual([95, 63, 127, BLOCK.air])
+    expect(diff).toContainEqual([0, 0, 0, BLOCK.air])
+  })
+
+  it('writing the diff back restores the saved world exactly', () => {
+    const world = new World()
+    world.fillBlock(33, 31, 64, BLOCK.stone)
+    const saved = world.saveChunks()
+    world.setBlock(33, 31, 64, BLOCK.air)
+    world.setBlock(31, 32, 63, BLOCK.dirt)
+    for (const [x, y, z, id] of world.diffFrom(saved)) world.setBlock(x, y, z, id)
+    expect(world.diffFrom(saved)).toEqual([])
+    expect(world.getBlock(33, 31, 64)).toBe(BLOCK.stone)
+    expect(world.getBlock(31, 32, 63)).toBe(BLOCK.air)
+  })
+
+  it('the saved copy does not follow later edits', () => {
+    const world = new World()
+    const saved = world.saveChunks()
+    world.setBlock(1, 1, 1, BLOCK.stone)
+    expect(world.diffFrom(saved)).toEqual([[1, 1, 1, BLOCK.air]])
   })
 })

@@ -104,6 +104,12 @@ export class BlockCracks {
     if (this.damaged.delete(blockKey(x, y, z))) this.dirty = true
   }
 
+  clearAll(): void {
+    if (this.damaged.size === 0) return
+    this.damaged.clear()
+    this.dirty = true
+  }
+
   update(): void {
     if (!this.dirty) return
     this.dirty = false

@@ -6,6 +6,8 @@ export const FALL = {
   hardBlocks: 4,
   // An enemy who hurt you this recently gets the kill.
   attributionSeconds: 5,
+  // Below this height a player has gone off the edge of the map into the void and dies.
+  voidY: -12,
 } as const
 
 export function fallDamage(blocks: number): number {

@@ -37,6 +37,14 @@ export class TntFuses {
     this.fuses.delete(key)
   }
 
+  clearAll(): void {
+    for (const fuse of this.fuses.values()) {
+      this.scene.remove(fuse.mesh)
+      ;(fuse.mesh.material as MeshBasicMaterial).dispose()
+    }
+    this.fuses.clear()
+  }
+
   update(dt: number): void {
     for (const fuse of this.fuses.values()) {
       fuse.age += dt

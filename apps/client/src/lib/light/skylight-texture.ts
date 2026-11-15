@@ -78,6 +78,16 @@ export class SkylightTexture {
     this.dirty = true
   }
 
+  // Whole-map pass after many edits at once (the map restored between matches).
+  recompute(): void {
+    if (!this.ready) {
+      this.pendingEdits++
+      return
+    }
+    this.light.set(computeSkylight(this.world))
+    this.dirty = true
+  }
+
   // Publishes a fresh texture at most every UPLOAD_THROTTLE_MS.
   flush(): void {
     if (!this.dirty) return

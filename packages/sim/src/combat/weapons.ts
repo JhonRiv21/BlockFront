@@ -129,8 +129,9 @@ export const GRENADE = {
   fuse: 3,
   throwSpeed: 16,
   gravity: 28,
-  bounce: 0.45,
-  groundFriction: 0.6,
+  // Playtest 2026-11-14: thrown into a group it must stay there; it settles within 2 blocks.
+  bounce: 0.25,
+  groundFriction: 0.35,
   size: 0.3,
   blockRadius: 2,
   // 150 at the centre fading to 0 at 4.5 blocks: lethal inside 1.5, 50 at 3.

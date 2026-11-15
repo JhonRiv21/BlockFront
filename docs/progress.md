@@ -1439,3 +1439,17 @@ Jhon played the deployed build on a weaker PC. This batch covers the screens and
   - Tests: `physics/void.test.ts`.
   - Fall damage itself was already working: a 12-block drop took 45 HP in QA.
 - **Checks:** typecheck, lint, format, 334 sim tests and 36 client tests are green.
+
+## Playtest fixes, batch 3 — grenade bounce and aiming (2026-11-14)
+
+- **Grenade:**
+  - **Before:** bounce went from 0.45 to 0.25 and the friction on landing from 0.6 to 0.35. A full-power throw used to roll and hop 6.6 blocks past its first landing, and came back 4.6 blocks off a wall.
+  - **Now:** it settles within 2 blocks.
+  - **Arc preview:** it uses the same step, so it follows.
+  - **Tests:** `combat/grenade-bounce.test.ts`.
+- **Aiming:**
+  - **Cause:** each sight sat 0.3 m from the eye. That put the stock and receiver of the long guns through the camera: the shotgun's origin ended 4.5 cm from the eye, giving dark slabs over half the screen and the hand in the middle.
+  - **Placement:** each gun is now placed by its rearmost point (`ADS_EYE_RELIEF`: 0.10 m for long guns, 0.32 m for the pistol, held out).
+  - **Iron sights (rifle, shotgun, pistol):** voxel iron sights still covered the target. These guns now come to the centre 7° low, and the HUD draws a dot at the centre while aiming (`render/ads-style.ts`). The carbine's red dot and the SMG's holo stay on the view axis; they read well.
+  - **Hitmarker:** it now shows while aiming; it faded out with the crosshair.
+- **Checked in the browser:** screenshots before and after for the rifle, pistol, shotgun, carbine and SMG.

@@ -4,6 +4,7 @@
   import { t } from '../i18n/locale.svelte.ts'
   import { causeLabel, displayName, itemLabel, teamLabel } from './labels.ts'
   import { BANDAGE_ART } from '../render/sprite-geometry.ts'
+  import { ADS_STYLE, gunInHand } from '../render/ads-style.ts'
   import PixelIcon from './PixelIcon.svelte'
   import TopBar from './TopBar.svelte'
 
@@ -23,6 +24,9 @@
     if (loot.grenades > 0) parts.push(t('loot.grenade', { n: loot.grenades }))
     return parts
   })
+
+  const held = $derived(gunInHand(hudState.slot, hudState.weapon))
+  const lowSight = $derived(held !== null && ADS_STYLE[held] === 'low')
 
   // Crosshair gap in px from the cone half-angle (radians).
   const gap = $derived(Math.round(4 + hudState.spread * 420))
@@ -202,7 +206,17 @@
       <span class="absolute h-2 w-0.5 -translate-x-1/2 bg-hud/90" style="top: {gap}px"></span>
       <span class="absolute h-2 w-0.5 -translate-x-1/2 bg-hud/90" style="bottom: {gap}px"></span>
     {/if}
+  </div>
+  <div class="absolute top-1/2 left-1/2 size-0">
+    {#if lowSight && hudState.ads > 0}
+      <!-- Iron-sight guns aim a little low (render/ads-style.ts): the dot marks the shot. -->
+      <span
+        class="absolute size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-hud shadow-[0_0_0_1px_rgba(0,0,0,0.6)]"
+        style="opacity: {hudState.ads}"
+      ></span>
+    {/if}
     {#if hudState.hitmarker}
+      <!-- Outside the fading crosshair: a hit must show while aiming too. -->
       <span
         class="absolute top-1/2 left-1/2 size-5 -translate-x-1/2 -translate-y-1/2 rotate-45 text-xl leading-none font-bold {hudState.hitmarkerHead
           ? 'text-team-red-ink'

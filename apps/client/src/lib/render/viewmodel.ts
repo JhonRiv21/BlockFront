@@ -3,6 +3,7 @@ import { WEAPONS, type WeaponId } from '@blockfront/sim/combat/weapons'
 import type { Team } from '@blockfront/sim/game'
 import { PALETTE, BLOCK } from '@blockfront/sim/world/blocks'
 import {
+  Box3,
   BoxGeometry,
   Color,
   DirectionalLight,
@@ -18,6 +19,7 @@ import {
 import type { AssetStore } from '../assets/asset-store.ts'
 import { BlockArm, easeOutBack, reloadPose, swingPose, WeaponMotion } from './first-person.ts'
 import { MuzzleFlashes } from './muzzle-flash.ts'
+import { ADS_LOW_DEGREES, ADS_STYLE } from './ads-style.ts'
 import { buildWeapon, GRIPS, MUZZLE_Y, MUZZLE_Z, SIGHT } from './weapon-models.ts'
 import { BANDAGE_ART, GRENADE_ART, LADDER_ART, SHOVEL_ART, TNT_ART } from './sprite-geometry.ts'
 import { SpriteItem } from './sprite-item.ts'
@@ -27,8 +29,19 @@ const TOOL_REST = new Vector3(0.36, -0.3, -0.5)
 // Minecraft hand anchor for sprite items, camera space (docs §1).
 const HAND_ANCHOR = new Vector3(0.56, -0.52, -0.72)
 const WEAPON_SCALE = 0.85
-// Distance from the eye to the sight while aiming (docs §4.1: 0.25–0.35).
-const ADS_DISTANCE = 0.3
+const DEG = Math.PI / 180
+// Gap between the eye and the rearmost point of the gun while aiming. Placing the sight at a
+// fixed distance instead (0.3 m, docs §4.1) put the stock and receiver of the long guns through
+// the camera: dark slabs over half the screen and the hand in the middle (2026-11-14 playtest).
+// Long guns sit on the cheek; the pistol is held out at arm's length.
+const ADS_EYE_RELIEF: Record<WeaponId, number> = {
+  rifle: 0.1,
+  carbine: 0.1,
+  smg: 0.1,
+  shotgun: 0.1,
+  sniper: 0.1,
+  pistol: 0.32,
+}
 export const VIEWMODEL_FOV = 70
 export const VIEWMODEL_FOV_ADS = 60
 const HOLSTER_SECONDS = 0.2
@@ -120,9 +133,15 @@ export class Viewmodel {
         weapon,
         new Vector3(0, MUZZLE_Y[weapon] * WEAPON_SCALE, MUZZLE_Z[weapon] * WEAPON_SCALE),
       )
-      // Camera-space pose that puts the sight on the view axis, ADS_DISTANCE ahead.
+      // Camera-space pose that puts the sight on the view axis with the back of the gun
+      // ADS_EYE_RELIEF ahead of the eye.
       const sight = SIGHT[weapon].clone().multiplyScalar(WEAPON_SCALE)
-      this.adsPoses.set(weapon, new Vector3(-sight.x, -sight.y, -ADS_DISTANCE - sight.z))
+      const back = new Box3().setFromObject(model, true).max.z
+      const z = -ADS_EYE_RELIEF[weapon] - back
+      // A 'low' gun drops its line of sight ADS_LOW_DEGREES under the centre.
+      const drop =
+        ADS_STYLE[weapon] === 'low' ? Math.tan(ADS_LOW_DEGREES * DEG) * -(z + sight.z) : 0
+      this.adsPoses.set(weapon, new Vector3(-sight.x, -sight.y - drop, z))
     }
     // Hand-held sprites (docs/f2-6-feel.md §1): Minecraft's handheld.json firstperson_righthand
     // transform, rotation [0, -90, 25], translation [1.13, 3.2, 1.13] px, scale 0.68.
